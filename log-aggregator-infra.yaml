@@ -1,0 +1,1093 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Log Aggregator – ECS Fargate (App + Dashboard + Chatbot) + ALB + CodeBuild + Bedrock + EFS"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# METADATA – Console grouping
+# ──────────────────────────────────────────────────────────────────────────────
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment"
+        Parameters:
+          - EnvironmentName
+      - Label:
+          default: "Networking"
+        Parameters:
+          - VpcId
+          - PublicSubnetIds
+          - PrivateSubnetIds
+      - Label:
+          default: "ECS Service Sizing"
+        Parameters:
+          - AppDesiredCount
+          - DashboardDesiredCount
+          - ChatbotDesiredCount
+          - ContainerPort
+      - Label:
+          default: "Source for CodeBuild"
+        Parameters:
+          - SourceProvider
+          - S3SourceBucket
+          - S3SourceKey
+          - GitHubOwner
+          - GitHubRepo
+          - GitHubBranch
+          - GitHubToken
+      - Label:
+          default: "Bedrock / Secrets"
+        Parameters:
+          - BedrockAgentId
+          - BedrockAgentAliasId
+      - Label:
+          default: "EventBridge Scheduler (optional)"
+        Parameters:
+          - SchedulerState
+          - SchedulerExpression
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PARAMETERS
+# ──────────────────────────────────────────────────────────────────────────────
+Parameters:
+
+  EnvironmentName:
+    Type: String
+    Default: prod
+    Description: Short environment tag used in all resource names.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing VPC where all resources will be created.
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: "Two PUBLIC subnets (different AZs) for the ALB."
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: "Two PRIVATE subnets (different AZs) for ECS tasks and EFS."
+
+  ContainerPort:
+    Type: Number
+    Default: 5000
+    Description: Port exposed by all three Flask containers.
+
+  AppDesiredCount:
+    Type: Number
+    Default: 1
+
+  DashboardDesiredCount:
+    Type: Number
+    Default: 1
+
+  ChatbotDesiredCount:
+    Type: Number
+    Default: 1
+
+  # ── CodeBuild source ────────────────────────────────────────────────────────
+  SourceProvider:
+    Type: String
+    Default: S3
+    AllowedValues: [S3, GITHUB]
+    Description: "S3 = upload a ZIP; GITHUB = point to a repo."
+
+  S3SourceBucket:
+    Type: String
+    Default: ""
+    Description: "S3 bucket name that holds the source ZIP (SourceProvider=S3 only)."
+
+  S3SourceKey:
+    Type: String
+    Default: "log-aggregator.zip"
+    Description: "S3 object key of the source ZIP (SourceProvider=S3 only)."
+
+  GitHubOwner:
+    Type: String
+    Default: ""
+    Description: "GitHub org/user (SourceProvider=GITHUB only)."
+
+  GitHubRepo:
+    Type: String
+    Default: ""
+    Description: "GitHub repo name (SourceProvider=GITHUB only)."
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: "Branch to build from (SourceProvider=GITHUB only)."
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "GitHub PAT with repo read access (SourceProvider=GITHUB only)."
+
+  # ── Bedrock ─────────────────────────────────────────────────────────────────
+  BedrockAgentId:
+    Type: String
+    Default: "PLACEHOLDER_AGENT_ID"
+    Description: "Your Bedrock Agent ID – stored in Secrets Manager."
+
+  BedrockAgentAliasId:
+    Type: String
+    Default: "TSTALIASID"
+    Description: "Your Bedrock Agent Alias ID – stored in Secrets Manager."
+
+  # ── EventBridge ─────────────────────────────────────────────────────────────
+  SchedulerState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: "Set ENABLED after first CodeBuild run to start periodic CodeBuild triggers."
+
+  SchedulerExpression:
+    Type: String
+    Default: "rate(1 day)"
+    Description: "EventBridge rate/cron expression for the CodeBuild trigger."
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONDITIONS
+# ──────────────────────────────────────────────────────────────────────────────
+Conditions:
+  UseGitHub: !Equals [!Ref SourceProvider, GITHUB]
+  UseS3:     !Equals [!Ref SourceProvider, S3]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+Resources:
+
+  # ============================================================
+  # 1. ECR REPOSITORIES
+  # ============================================================
+  EcrAppRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "log-aggregator-app-${EnvironmentName}"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep last 5 images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},
+          "action":{"type":"expire"}}]}
+
+  EcrDashboardRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "log-aggregator-dashboard-${EnvironmentName}"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep last 5 images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},
+          "action":{"type":"expire"}}]}
+
+  EcrChatbotRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "log-aggregator-chatbot-${EnvironmentName}"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"Keep last 5 images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},
+          "action":{"type":"expire"}}]}
+
+  # ============================================================
+  # 2. S3 ARTIFACT BUCKET  (also used if SourceProvider=S3)
+  # ============================================================
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "log-aggregator-artifacts-${AWS::AccountId}-${EnvironmentName}"
+      VersioningConfiguration: { Status: Enabled }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+
+  # ============================================================
+  # 3. SECRETS MANAGER – Bedrock credentials
+  # ============================================================
+  BedrockSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "log-aggregator/bedrock-${EnvironmentName}"
+      Description: "Bedrock Agent credentials for the chatbot service"
+      SecretString: !Sub |
+        {
+          "BEDROCK_AGENT_ID": "${BedrockAgentId}",
+          "BEDROCK_AGENT_ALIAS_ID": "${BedrockAgentAliasId}"
+        }
+
+  # ============================================================
+  # 4. EFS – Shared data volume
+  # ============================================================
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "EFS – allow NFS from ECS tasks only"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref EcsTaskSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  SharedFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+
+  EfsAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref SharedFileSystem
+      PosixUser:   { Uid: "1001", Gid: "1001" }
+      RootDirectory:
+        Path: "/shared"
+        CreationInfo: { OwnerUid: "1001", OwnerGid: "1001", Permissions: "0755" }
+
+  EfsMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedFileSystem
+      SubnetId:     !Select [0, !Ref PrivateSubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  EfsMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref SharedFileSystem
+      SubnetId:     !Select [1, !Ref PrivateSubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  # ============================================================
+  # 5. SECURITY GROUPS
+  # ============================================================
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ALB – allow HTTP from internet"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  EcsTaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ECS Tasks – allow traffic from ALB only"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  # ============================================================
+  # 6. APPLICATION LOAD BALANCER
+  # ============================================================
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "log-aggregator-alb-${EnvironmentName}"
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups: [!Ref AlbSecurityGroup]
+
+  # ── Target Groups ───────────────────────────────────────────
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "lag-app-tg-${EnvironmentName}"
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /api/status
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  DashboardTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "lag-dashboard-tg-${EnvironmentName}"
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /dashboard/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  ChatbotTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "lag-chatbot-tg-${EnvironmentName}"
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      TargetType: ip
+      HealthCheckPath: /chatbot/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  # ── Listener – path-based routing ──────────────────────────
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+
+  ListenerRuleDashboard:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref AlbListener
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values: ["/dashboard", "/dashboard/*"]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref DashboardTargetGroup
+
+  ListenerRuleChatbot:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref AlbListener
+      Priority: 20
+      Conditions:
+        - Field: path-pattern
+          Values: ["/chatbot", "/chatbot/*"]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ChatbotTargetGroup
+
+  # ============================================================
+  # 7. IAM ROLES
+  # ============================================================
+
+  # ── ECS Task Execution Role (pull images, write logs) ──────
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "log-aggregator-ecs-exec-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - kms:Decrypt
+                Resource: !Ref BedrockSecret
+
+  # ── ECS Task Role (what the container can do at runtime) ───
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "log-aggregator-ecs-task-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BedrockAndSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeAgent
+                  - bedrock:InvokeModel
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref BedrockSecret
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: !GetAtt SharedFileSystem.Arn
+
+  # ── CodeBuild Role ─────────────────────────────────────────
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "log-aggregator-codebuild-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref BedrockSecret
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt EcsExecutionRole.Arn
+                  - !GetAtt EcsTaskRole.Arn
+
+  # ── EventBridge Role ────────────────────────────────────────
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "log-aggregator-events-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartCodeBuild
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: codebuild:StartBuild
+                Resource: !GetAtt CodeBuildProject.Arn
+
+  # ============================================================
+  # 8. CLOUDWATCH LOG GROUPS
+  # ============================================================
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/log-aggregator-app-${EnvironmentName}"
+      RetentionInDays: 30
+
+  DashboardLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/log-aggregator-dashboard-${EnvironmentName}"
+      RetentionInDays: 30
+
+  ChatbotLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/log-aggregator-chatbot-${EnvironmentName}"
+      RetentionInDays: 30
+
+  # ============================================================
+  # 9. ECS CLUSTER
+  # ============================================================
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "log-aggregator-cluster-${EnvironmentName}"
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ============================================================
+  # 10. ECS TASK DEFINITIONS
+  # ============================================================
+
+  # ── App Task Definition ─────────────────────────────────────
+  AppTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "log-aggregator-app-${EnvironmentName}"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      Volumes:
+        - Name: shared-efs
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref SharedFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: app
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-app-${EnvironmentName}:latest"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: APP_PORT
+              Value: !Sub "${ContainerPort}"
+            - Name: APP_HOST
+              Value: "0.0.0.0"
+            - Name: SERVICE_TYPE
+              Value: app
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: app
+          MountPoints:
+            - ContainerPath: /shared
+              SourceVolume: shared-efs
+          Essential: true
+          HealthCheck:
+            Command: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/api/status')\" || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+
+  # ── Dashboard Task Definition ───────────────────────────────
+  DashboardTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "log-aggregator-dashboard-${EnvironmentName}"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      Volumes:
+        - Name: shared-efs
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref SharedFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref EfsAccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: dashboard
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-dashboard-${EnvironmentName}:latest"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: APP_PORT
+              Value: !Sub "${ContainerPort}"
+            - Name: APP_HOST
+              Value: "0.0.0.0"
+            - Name: SERVICE_TYPE
+              Value: dashboard
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref DashboardLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: dashboard
+          MountPoints:
+            - ContainerPath: /shared
+              SourceVolume: shared-efs
+          Essential: true
+          HealthCheck:
+            Command: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/dashboard/health')\" || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+
+  # ── Chatbot Task Definition ─────────────────────────────────
+  ChatbotTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "log-aggregator-chatbot-${EnvironmentName}"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: chatbot
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-chatbot-${EnvironmentName}:latest"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: APP_PORT
+              Value: !Sub "${ContainerPort}"
+            - Name: APP_HOST
+              Value: "0.0.0.0"
+            - Name: SERVICE_TYPE
+              Value: chatbot
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          Secrets:
+            - Name: BEDROCK_AGENT_ID
+              ValueFrom: !Sub "${BedrockSecret}:BEDROCK_AGENT_ID::"
+            - Name: BEDROCK_AGENT_ALIAS_ID
+              ValueFrom: !Sub "${BedrockSecret}:BEDROCK_AGENT_ALIAS_ID::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ChatbotLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: chatbot
+          Essential: true
+          HealthCheck:
+            Command: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/chatbot/health')\" || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+
+  # ============================================================
+  # 11. ECS SERVICES
+  # ============================================================
+
+  AppService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - AlbListener
+      - EfsMountTargetA
+      - EfsMountTargetB
+    Properties:
+      ServiceName: !Sub "log-aggregator-app-svc-${EnvironmentName}"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref AppTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref AppDesiredCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups: [!Ref EcsTaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: app
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AppTargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+
+  DashboardService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - AlbListener
+      - ListenerRuleDashboard
+      - EfsMountTargetA
+      - EfsMountTargetB
+    Properties:
+      ServiceName: !Sub "log-aggregator-dashboard-svc-${EnvironmentName}"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref DashboardTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref DashboardDesiredCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups: [!Ref EcsTaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: dashboard
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref DashboardTargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+
+  ChatbotService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - AlbListener
+      - ListenerRuleChatbot
+    Properties:
+      ServiceName: !Sub "log-aggregator-chatbot-svc-${EnvironmentName}"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref ChatbotTaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref ChatbotDesiredCount
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups: [!Ref EcsTaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: chatbot
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref ChatbotTargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+
+  # ============================================================
+  # 12. CODEBUILD PROJECT
+  # ============================================================
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "log-aggregator-build-${EnvironmentName}"
+      Description: "Builds all 3 Docker images and force-deploys ECS services"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true          # Required for docker build
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: ECR_APP_URI
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-app-${EnvironmentName}"
+          - Name: ECR_DASHBOARD_URI
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-dashboard-${EnvironmentName}"
+          - Name: ECR_CHATBOT_URI
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-chatbot-${EnvironmentName}"
+          - Name: ECS_CLUSTER_NAME
+            Value: !Ref EcsCluster
+          - Name: APP_SERVICE_NAME
+            Value: !Sub "log-aggregator-app-svc-${EnvironmentName}"
+          - Name: DASHBOARD_SERVICE_NAME
+            Value: !Sub "log-aggregator-dashboard-svc-${EnvironmentName}"
+          - Name: CHATBOT_SERVICE_NAME
+            Value: !Sub "log-aggregator-chatbot-svc-${EnvironmentName}"
+          - Name: ARTIFACT_BUCKET
+            Value: !Ref ArtifactBucket
+      Source:
+        !If
+          - UseGitHub
+          - Type: GITHUB
+            Location: !Sub "https://github.com/${GitHubOwner}/${GitHubRepo}.git"
+            GitCloneDepth: 1
+            Auth:
+              Type: OAUTH
+              Resource: !Ref GitHubToken
+            BuildSpec: |
+              version: 0.2
+
+              env:
+                variables:
+                  DOCKER_BUILDKIT: "1"
+
+              phases:
+                install:
+                  runtime-versions:
+                    python: "3.12"
+                  commands:
+                    - echo "Installing tools..."
+                    - pip install --upgrade pip awscli --quiet
+
+                pre_build:
+                  commands:
+                    - echo "Logging in to ECR..."
+                    - aws ecr get-login-password --region $AWS_DEFAULT_REGION |
+                        docker login --username AWS --password-stdin
+                        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+                    - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+                    - |
+                      if [ -z "$IMAGE_TAG" ]; then
+                        export IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+                      fi
+                    - echo "Image tag -> $IMAGE_TAG"
+
+                    - echo "Listing source files..."
+                    - ls -la
+
+                    - |
+                      if [ ! -f "dockerfiles/Dockerfile.app" ]; then
+                        FOUND=$(find . -name "Dockerfile.app" | head -1)
+                        if [ -n "$FOUND" ]; then
+                          NESTED=$(dirname $(dirname $FOUND))
+                          echo "Source nested at $NESTED – flattening..."
+                          cp -r $NESTED/. .
+                        fi
+                      fi
+
+                build:
+                  commands:
+                    - echo "Building App image..."
+                    - docker build --cache-from $ECR_APP_URI:latest
+                        -f dockerfiles/Dockerfile.app
+                        -t $ECR_APP_URI:$IMAGE_TAG
+                        -t $ECR_APP_URI:latest .
+
+                    - echo "Building Dashboard image..."
+                    - docker build --cache-from $ECR_DASHBOARD_URI:latest
+                        -f dockerfiles/Dockerfile.dashboard
+                        -t $ECR_DASHBOARD_URI:$IMAGE_TAG
+                        -t $ECR_DASHBOARD_URI:latest .
+
+                    - echo "Building Chatbot image..."
+                    - docker build --cache-from $ECR_CHATBOT_URI:latest
+                        -f dockerfiles/Dockerfile.chatbot
+                        -t $ECR_CHATBOT_URI:$IMAGE_TAG
+                        -t $ECR_CHATBOT_URI:latest .
+
+                post_build:
+                  commands:
+                    - echo "Pushing all images to ECR..."
+                    - docker push $ECR_APP_URI:$IMAGE_TAG
+                    - docker push $ECR_APP_URI:latest
+                    - docker push $ECR_DASHBOARD_URI:$IMAGE_TAG
+                    - docker push $ECR_DASHBOARD_URI:latest
+                    - docker push $ECR_CHATBOT_URI:$IMAGE_TAG
+                    - docker push $ECR_CHATBOT_URI:latest
+
+                    - echo "Forcing ECS deployments..."
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $APP_SERVICE_NAME --force-new-deployment
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $DASHBOARD_SERVICE_NAME --force-new-deployment
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $CHATBOT_SERVICE_NAME --force-new-deployment
+
+                    - echo "Build complete. Tag -> $IMAGE_TAG"
+
+              cache:
+                paths:
+                  - "/root/.cache/pip/**/*"
+          - Type: S3
+            Location: !Sub "${S3SourceBucket}/${S3SourceKey}"
+            BuildSpec: |
+              version: 0.2
+
+              env:
+                variables:
+                  DOCKER_BUILDKIT: "1"
+
+              phases:
+                install:
+                  runtime-versions:
+                    python: "3.12"
+                  commands:
+                    - echo "Installing tools..."
+                    - pip install --upgrade pip awscli --quiet
+
+                pre_build:
+                  commands:
+                    - echo "Logging in to ECR..."
+                    - aws ecr get-login-password --region $AWS_DEFAULT_REGION |
+                        docker login --username AWS --password-stdin
+                        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+                    - export IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+                    - echo "Image tag -> $IMAGE_TAG"
+
+                    - echo "Listing source files..."
+                    - ls -la
+
+                    - |
+                      if [ ! -f "dockerfiles/Dockerfile.app" ]; then
+                        FOUND=$(find . -name "Dockerfile.app" | head -1)
+                        if [ -n "$FOUND" ]; then
+                          NESTED=$(dirname $(dirname $FOUND))
+                          echo "Source nested at $NESTED – flattening..."
+                          cp -r $NESTED/. .
+                        fi
+                      fi
+
+                build:
+                  commands:
+                    - echo "Building App image..."
+                    - docker build --cache-from $ECR_APP_URI:latest
+                        -f dockerfiles/Dockerfile.app
+                        -t $ECR_APP_URI:$IMAGE_TAG
+                        -t $ECR_APP_URI:latest .
+
+                    - echo "Building Dashboard image..."
+                    - docker build --cache-from $ECR_DASHBOARD_URI:latest
+                        -f dockerfiles/Dockerfile.dashboard
+                        -t $ECR_DASHBOARD_URI:$IMAGE_TAG
+                        -t $ECR_DASHBOARD_URI:latest .
+
+                    - echo "Building Chatbot image..."
+                    - docker build --cache-from $ECR_CHATBOT_URI:latest
+                        -f dockerfiles/Dockerfile.chatbot
+                        -t $ECR_CHATBOT_URI:$IMAGE_TAG
+                        -t $ECR_CHATBOT_URI:latest .
+
+                post_build:
+                  commands:
+                    - echo "Pushing all images to ECR..."
+                    - docker push $ECR_APP_URI:$IMAGE_TAG
+                    - docker push $ECR_APP_URI:latest
+                    - docker push $ECR_DASHBOARD_URI:$IMAGE_TAG
+                    - docker push $ECR_DASHBOARD_URI:latest
+                    - docker push $ECR_CHATBOT_URI:$IMAGE_TAG
+                    - docker push $ECR_CHATBOT_URI:latest
+
+                    - echo "Forcing ECS deployments..."
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $APP_SERVICE_NAME --force-new-deployment
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $DASHBOARD_SERVICE_NAME --force-new-deployment
+                    - aws ecs update-service --cluster $ECS_CLUSTER_NAME
+                        --service $CHATBOT_SERVICE_NAME --force-new-deployment
+
+                    - echo "Build complete. Tag -> $IMAGE_TAG"
+
+              cache:
+                paths:
+                  - "/root/.cache/pip/**/*"
+
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub "/codebuild/log-aggregator-${EnvironmentName}"
+          StreamName: build
+
+  # ============================================================
+  # 13. EVENTBRIDGE RULE – periodic CodeBuild trigger
+  # ============================================================
+  ScheduledBuildRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "log-aggregator-build-schedule-${EnvironmentName}"
+      Description: "Optionally trigger CodeBuild on a schedule"
+      State: !Ref SchedulerState
+      ScheduleExpression: !Ref SchedulerExpression
+      Targets:
+        - Id: CodeBuildTarget
+          Arn: !GetAtt CodeBuildProject.Arn
+          RoleArn: !GetAtt EventBridgeRole.Arn
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OUTPUTS
+# ──────────────────────────────────────────────────────────────────────────────
+Outputs:
+
+  AlbUrl:
+    Description: "ALB DNS – open in browser (HTTP)"
+    Value: !Sub "http://${AppLoadBalancer.DNSName}"
+
+  AppEndpoint:
+    Description: "App Service endpoint"
+    Value: !Sub "http://${AppLoadBalancer.DNSName}/"
+
+  DashboardEndpoint:
+    Description: "Dashboard Service endpoint"
+    Value: !Sub "http://${AppLoadBalancer.DNSName}/dashboard"
+
+  ChatbotEndpoint:
+    Description: "Chatbot Service endpoint"
+    Value: !Sub "http://${AppLoadBalancer.DNSName}/chatbot"
+
+  EcrAppUri:
+    Description: "ECR URI – App"
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-app-${EnvironmentName}"
+
+  EcrDashboardUri:
+    Description: "ECR URI – Dashboard"
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-dashboard-${EnvironmentName}"
+
+  EcrChatbotUri:
+    Description: "ECR URI – Chatbot"
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/log-aggregator-chatbot-${EnvironmentName}"
+
+  EcsClusterName:
+    Description: "ECS Cluster name"
+    Value: !Ref EcsCluster
+
+  CodeBuildProject:
+    Description: "Start this project in CodeBuild console to build and deploy all services"
+    Value: !Ref CodeBuildProject
+
+  ArtifactBucketName:
+    Description: "S3 bucket – upload your source ZIP here"
+    Value: !Ref ArtifactBucket
+
+  BedrockSecretArn:
+    Description: "Secrets Manager ARN – update BEDROCK_AGENT_ID here after creating your Agent"
+    Value: !Ref BedrockSecret
