@@ -25,7 +25,7 @@ Metadata:
           - ChatbotDesiredCount
           - ContainerPort
       - Label:
-          default: "Source for CodeBuild (S3)"
+          default: "Source ZIP Bucket (YOU create this before deploying)"
         Parameters:
           - S3SourceBucket
           - S3SourceKey
@@ -87,15 +87,30 @@ Parameters:
     Default: 1
 
   # ── CodeBuild source ─────────────────────────────────────────────────────────
+  # IMPORTANT: You must create this S3 bucket MANUALLY before deploying this
+  # stack, and upload your log-aggregator.zip to it first.
+  # Steps:
+  #   1. Create S3 bucket (versioning enabled) — any name you choose
+  #   2. Upload log-aggregator.zip to that bucket
+  #   3. Enter the bucket name here as S3SourceBucket
+  #   4. Deploy this stack — CodeBuild will read the ZIP immediately
   S3SourceBucket:
     Type: String
-    Default: ""
-    Description: "S3 bucket name that holds the source ZIP. Leave blank on first deploy – the stack creates the artifact bucket, then update this to that bucket name."
+    Description: >-
+      Name of your pre-existing S3 bucket that holds the source ZIP.
+      YOU MUST create this bucket and upload the ZIP before deploying this stack.
+      Example: my-log-aggregator-source
+    AllowedPattern: "^[a-z0-9][a-z0-9\\-]{1,61}[a-z0-9]$"
+    ConstraintDescription: >-
+      Must be a valid S3 bucket name (3-63 chars, lowercase letters, numbers,
+      hyphens only). This bucket must already exist and contain your ZIP file.
 
   S3SourceKey:
     Type: String
     Default: "log-aggregator.zip"
-    Description: "S3 object key of the source ZIP inside the bucket."
+    Description: >-
+      S3 object key (filename) of your source ZIP inside S3SourceBucket.
+      Default is log-aggregator.zip — change this if your ZIP has a different name.
 
   # ── Bedrock ──────────────────────────────────────────────────────────────────
   BedrockAgentId:
@@ -190,7 +205,15 @@ Resources:
           "action":{"type":"expire"}}]}
 
   # ============================================================
-  # 2. S3 BUCKET – CodeBuild artifact / source ZIP
+  # 2. S3 BUCKET – CodeBuild artifacts / cache outputs
+  #
+  #   This bucket is created by CloudFormation automatically.
+  #   It stores CodeBuild intermediate outputs and Lambda ZIPs.
+  #
+  #   NOTE: Your SOURCE ZIP must be uploaded to S3SourceBucket
+  #   (the bucket you created manually) — NOT here.
+  #   CodeBuild reads your ZIP from S3SourceBucket and writes
+  #   build outputs into this ArtifactBucket.
   # ============================================================
   ArtifactBucket:
     Type: AWS::S3::Bucket
@@ -637,7 +660,17 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
-              # Read source ZIP from artifact bucket
+              # Read source ZIP from the pre-existing source bucket (S3SourceBucket)
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub "arn:aws:s3:::${S3SourceBucket}"
+                  - !Sub "arn:aws:s3:::${S3SourceBucket}/*"
+              # Read/write CodeBuild artifact outputs bucket (created by this stack)
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -1219,6 +1252,8 @@ Resources:
             Value: !Ref ProcessedLogsBucket
           - Name: LAMBDA_FUNCTION_NAME
             Value: !Ref LogProcessorLambda
+      # CodeBuild reads your source ZIP directly from S3SourceBucket.
+      # That bucket must exist and contain the ZIP BEFORE this stack deploys.
       Source:
         Type: S3
         Location: !Sub "${S3SourceBucket}/${S3SourceKey}"
@@ -1478,8 +1513,12 @@ Outputs:
 
   # ── S3 Buckets ─────────────────────────────────────────────────────────────
   ArtifactBucketName:
-    Description: "S3 – Upload your source ZIP here (CodeBuild reads from this)"
+    Description: "S3 – Created by this stack. CodeBuild writes build outputs here. Do NOT upload your source ZIP here."
     Value: !Ref ArtifactBucket
+
+  SourceBucketReminder:
+    Description: "S3 – Your pre-existing source bucket. Upload log-aggregator.zip here then start CodeBuild."
+    Value: !Ref S3SourceBucket
 
   RawLogsBucketName:
     Description: "S3 – App writes raw logs to raw-logs/ prefix; Lambda reads + converts them; CodeBuild stores Lambda ZIPs under lambda/"
