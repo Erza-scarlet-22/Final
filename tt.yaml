@@ -1,0 +1,1054 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Log Query Engine Dashboard + Batch Auto-Seeding + Standalone CodeBuild + EFS shared data"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Environment"
+        Parameters:
+          - EnvironmentName
+      - Label:
+          default: "Networking"
+        Parameters:
+          - VpcId
+          - PublicSubnetIds
+          - PrivateSubnetIds
+      - Label:
+          default: "Dashboard"
+        Parameters:
+          - DashboardDesiredCount
+          - DashboardContainerPort
+          - DashboardHealthCheckPath
+      - Label:
+          default: "Batch Scheduling"
+        Parameters:
+          - BatchScheduleState
+          - BatchScheduleExpression
+      - Label:
+          default: "Source for CodeBuild"
+        Parameters:
+          - SourceProvider
+          - S3SourceBucket
+          - S3SourceKey
+          - GitHubOwner
+          - GitHubRepo
+          - GitHubBranch
+          - GitHubToken
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing VPC Id
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Existing PUBLIC subnets (2 AZ recommended) for ALB
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Existing PRIVATE subnets (2 AZ recommended) for ECS tasks + EFS mount targets
+
+  DashboardDesiredCount:
+    Type: Number
+    Default: 1
+
+  BatchScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Set to ENABLED once the initial CodeBuild run is complete.
+
+  DashboardContainerPort:
+    Type: Number
+    Default: 5000
+
+  DashboardHealthCheckPath:
+    Type: String
+    Default: "/"
+
+  BatchScheduleExpression:
+    Type: String
+    Default: "rate(5 minutes)"
+
+  SourceProvider:
+    Type: String
+    Default: S3
+    AllowedValues: [S3, GITHUB]
+    Description: "Choose S3 (ZIP) or GitHub repo as the source for CodeBuild."
+
+  S3SourceBucket:
+    Type: String
+    Default: toil-acc
+
+  S3SourceKey:
+    Type: String
+    Default: ToilMgmt.zip
+
+  GitHubOwner:
+    Type: String
+    Default: ""
+    Description: "GitHub org/user (only for SourceProvider=GITHUB)"
+
+  GitHubRepo:
+    Type: String
+    Default: ""
+    Description: "GitHub repo name (only for SourceProvider=GITHUB)"
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: "Git branch or ref (only for SourceProvider=GITHUB)"
+
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "GitHub PAT (classic/fine-grained) with repo read access (only for SourceProvider=GITHUB)."
+
+Conditions:
+  UseGitHub: !Equals [!Ref SourceProvider, GITHUB]
+  UseS3: !Equals [!Ref SourceProvider, S3]
+
+Resources:
+  EcrWebRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "toil-dashboard-web-${EnvironmentName}"
+      ImageScanningConfiguration: { ScanOnPush: true }
+
+  EcrBatchRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "toil-dashboard-batch-${EnvironmentName}"
+      ImageScanningConfiguration: { ScanOnPush: true }
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ALB SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  EcsTaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ECS tasks SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref DashboardContainerPort
+          ToPort: !Ref DashboardContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "EFS SG: allow NFS from ECS tasks"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref EcsTaskSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      PosixUser: { Uid: "1000", Gid: "1000" }
+      RootDirectory:
+        Path: "/data"
+        CreationInfo: { OwnerUid: "1000", OwnerGid: "1000", Permissions: "0777" }
+
+  MountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [0, !Ref PrivateSubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  MountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [1, !Ref PrivateSubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  WebLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/toil-dashboard-web/${EnvironmentName}"
+      RetentionInDays: 14
+
+  BatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/toil-dashboard-batch/${EnvironmentName}"
+      RetentionInDays: 14
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "toil-dashboard-${EnvironmentName}"
+
+  DashboardAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: "toil-management-dashboard"
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups: [!Ref AlbSecurityGroup]
+
+  DashboardTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: ip
+      Port: !Ref DashboardContainerPort
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: !Ref DashboardHealthCheckPath
+      Matcher: { HttpCode: "200-399" }
+
+  DashboardListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref DashboardAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref DashboardTargetGroup
+
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "toil-ecs-exec-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  WebTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "toil-web-task-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: efs-client-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: "*"
+
+  BatchTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "toil-batch-task-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: efs-client-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                  - elasticfilesystem:ClientRootAccess
+                Resource: "*"
+
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: [MountTargetA, MountTargetB]
+    Properties:
+      Family: !Sub "toil-dashboard-web-${EnvironmentName}"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt WebTaskRole.Arn
+      Volumes:
+        - Name: shared-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: "dashboard-web"
+          Image: !Sub "${EcrWebRepo.RepositoryUri}:latest"
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref DashboardContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: APP_DATA_DIR
+              Value: "/data"
+          MountPoints:
+            - SourceVolume: shared-data
+              ContainerPath: "/data"
+              ReadOnly: false
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WebLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "web"
+
+  BatchTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: [MountTargetA, MountTargetB]
+    Properties:
+      Family: !Sub "toil-dashboard-batch-${EnvironmentName}"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt BatchTaskRole.Arn
+      Volumes:
+        - Name: shared-data
+          EFSVolumeConfiguration:
+            FileSystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: "batch-runner"
+          Image: !Sub "${EcrBatchRepo.RepositoryUri}:latest"
+          Essential: true
+          Environment:
+            - Name: APP_DATA_DIR
+              Value: "/data"
+          MountPoints:
+            - SourceVolume: shared-data
+              ContainerPath: "/data"
+              ReadOnly: false
+          Command: ["python", "run_batch.py"]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BatchLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "batch"
+
+  DashboardService:
+    Type: AWS::ECS::Service
+    DependsOn: DashboardListener
+    Properties:
+      ServiceName: !Sub "toil-dashboard-web-svc-${EnvironmentName}"
+      Cluster: !Ref EcsCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref DashboardDesiredCount
+      TaskDefinition: !Ref WebTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: !Ref PrivateSubnetIds
+          SecurityGroups: [!Ref EcsTaskSecurityGroup]
+      LoadBalancers:
+        - ContainerName: "dashboard-web"
+          ContainerPort: !Ref DashboardContainerPort
+          TargetGroupArn: !Ref DashboardTargetGroup
+
+  EventBridgeInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "toil-batch-eventbridge-role-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: run-ecs-task
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ecs:RunTask]
+                Resource: "*"
+              - Effect: Allow
+                Action: [iam:PassRole]
+                Resource:
+                  - !GetAtt EcsTaskExecutionRole.Arn
+                  - !GetAtt BatchTaskRole.Arn
+
+  BatchScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "toil-batch-5min-${EnvironmentName}"
+      Description: "Runs toil batch job every 5 minutes"
+      ScheduleExpression: !Ref BatchScheduleExpression
+      State: !Ref BatchScheduleState
+      Targets:
+        - Id: "EcsRunBatchTask"
+          Arn: !GetAtt EcsCluster.Arn
+          RoleArn: !GetAtt EventBridgeInvokeRole.Arn
+          EcsParameters:
+            LaunchType: FARGATE
+            TaskDefinitionArn: !Ref BatchTaskDefinition
+            TaskCount: 1
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                AssignPublicIp: DISABLED
+                Subnets: !Ref PrivateSubnetIds
+                SecurityGroups: [!Ref EcsTaskSecurityGroup]
+            PlatformVersion: "LATEST"
+
+  CodeBuildSourceCredential:
+    Condition: UseGitHub
+    Type: AWS::CodeBuild::SourceCredential
+    Properties:
+      AuthType: PERSONAL_ACCESS_TOKEN
+      ServerType: GITHUB
+      Token: !Ref GitHubToken
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "toil-dashboard-codebuild-${EnvironmentName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: codebuild-permissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketLocation
+                  - s3:GetBucketAcl
+                Resource:
+                  - !Sub "arn:aws:s3:::${S3SourceBucket}"
+                  - !Sub "arn:aws:s3:::${S3SourceBucket}/*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                Resource: "*"
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "toil-dashboard-build-${EnvironmentName}"
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      SourceVersion: !If [UseGitHub, !Ref GitHubBranch, !Ref "AWS::NoValue"]
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        Type: LINUX_CONTAINER
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: WEB_REPO_URI
+            Value: !GetAtt EcrWebRepo.RepositoryUri
+          - Name: BATCH_REPO_URI
+            Value: !GetAtt EcrBatchRepo.RepositoryUri
+          - Name: ECS_CLUSTER_NAME
+            Value: !Ref EcsCluster
+          - Name: ECS_SERVICE_NAME
+            Value: !GetAtt DashboardService.Name
+      Source:
+        Type: !If [UseGitHub, GITHUB, S3]
+        Location: !If [UseGitHub, !Sub "https://github.com/${GitHubOwner}/${GitHubRepo}.git", !Sub "${S3SourceBucket}/${S3SourceKey}"]
+        GitCloneDepth: !If [UseGitHub, 1, !Ref "AWS::NoValue"]
+        ReportBuildStatus: !If [UseGitHub, true, !Ref "AWS::NoValue"]
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo "Source ready (S3 or GitHub)."
+                - REGISTRY=$(echo $WEB_REPO_URI | awk -F/ '{print $1}')
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REGISTRY
+                - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+                - mkdir -p /tmp/web /tmp/batch
+                - cp -r ./* /tmp/web/ || true
+                - cp -r ./* /tmp/batch/ || true
+                
+                - |
+                  cat > /tmp/web/requirements.txt << 'EOF'
+                  flask>=3.0
+                  pandas>=2.0
+                  openpyxl>=3.1
+                  EOF
+                  
+                - |
+                  cat > /tmp/batch/requirements.txt << 'EOF'
+                  pandas>=2.0
+                  openpyxl>=3.1
+                  boto3>=1.26
+                  EOF
+                  
+                # =======================================================================================
+                # LOG QUERY ENGINE FLASK APP (WITH CHART CLICKS AND DATES)
+                # =======================================================================================
+                - |
+                  cat > /tmp/web/web_app.py << 'EOF'
+                  import os
+                  import time
+                  import json
+                  import pandas as pd
+                  from flask import Flask, request, render_template_string, Response
+
+                  app = Flask(__name__)
+
+                  BASE_DIR = os.environ.get("APP_DATA_DIR", "/data")
+                  EXCEL_FILE = os.path.join(BASE_DIR, "known_error_list.xlsx")
+
+                  TEMPLATE = """
+                  <!DOCTYPE html>
+                  <html lang="en">
+                  <head>
+                    <meta charset="utf-8" />
+                    <title>Log Query Engine</title>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+                    <style>
+                      :root {
+                        --bg: #0f172a; --surface: #1e293b; --border: #334155;
+                        --text: #f8fafc; --muted: #94a3b8; --primary: #3b82f6; --primary-hover: #2563eb;
+                        --font: 'Inter', sans-serif;
+                      }
+                      * { box-sizing: border-box; margin: 0; padding: 0; }
+                      body { font-family: var(--font); background: var(--bg); color: var(--text); padding-bottom: 40px; }
+                      
+                      /* Header */
+                      header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 20px 32px; margin-bottom: 24px; }
+                      .brand-title { font-size: 24px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+                      .brand-subtitle { font-size: 13px; color: var(--muted); }
+                      .logo-icon { width: 24px; height: 24px; color: var(--primary); }
+                      
+                      /* Toolbar */
+                      .toolbar-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 0 32px 24px 32px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+                      .control-group { display: flex; flex-direction: column; gap: 6px; }
+                      .control-group label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+                      input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 6px; font-family: var(--font); font-size: 14px; outline: none; }
+                      input:focus, select:focus { border-color: var(--primary); }
+                      
+                      .btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; font-size: 14px; }
+                      .btn:hover { background: #334155; }
+                      .btn-primary { background: var(--primary); border-color: var(--primary); color: white; }
+                      .btn-primary:hover { background: var(--primary-hover); }
+                      
+                      .actions-right { margin-left: auto; display: flex; gap: 12px; }
+
+                      /* Layout Structure */
+                      .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 0 32px; }
+                      .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+                      .panel-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+                      .panel-title { font-size: 16px; font-weight: 600; }
+                      .panel-indicator { font-size: 13px; font-weight: 500; color: var(--primary); background: rgba(59, 130, 246, 0.1); padding: 4px 10px; border-radius: 20px; }
+                      .panel-body { padding: 20px; flex: 1; }
+
+                      /* Table */
+                      .table-container { max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+                      table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+                      th { background: #0f172a; padding: 14px; color: var(--muted); font-weight: 600; position: sticky; top: 0; border-bottom: 1px solid var(--border); }
+                      td { padding: 14px; border-bottom: 1px solid var(--border); color: #cbd5e1; }
+                      tr:hover td { background: rgba(255,255,255,0.03); color: white; }
+                      
+                      /* Chart Area */
+                      .chart-container { position: relative; height: 400px; width: 100%; }
+                      .chart-footer { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: rgba(15, 23, 42, 0.5); }
+                      
+                      /* Active Filter Banner */
+                      .active-filter-banner { background: rgba(59, 130, 246, 0.1); border: 1px solid var(--primary); padding: 12px 20px; margin: 0 32px 24px 32px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+                      
+                      ::-webkit-scrollbar { width: 8px; height: 8px; }
+                      ::-webkit-scrollbar-track { background: var(--bg); }
+                      ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+                      ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+                    </style>
+                  </head>
+                  <body>
+
+                    <header>
+                      <div class="brand-title">
+                        <svg class="logo-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        Log Query Engine
+                      </div>
+                      <div class="brand-subtitle">Excel-driven + Table (same as earlier) + Bar chart (Count per unique error)</div>
+                    </header>
+
+                    <!-- Filter Form -->
+                    <form method="get" action="/" class="toolbar-container" id="filterForm">
+                      <div class="control-group">
+                        <label>Search text</label>
+                        <input name="q" placeholder="Search error text..." value="{{ filters.q }}" style="width: 200px;">
+                      </div>
+                      <div class="control-group">
+                        <label>Sort By</label>
+                        <select name="sort">
+                          <option value="newest" {% if filters.sort == 'newest' %}selected{% endif %}>Newest first</option>
+                          <option value="oldest" {% if filters.sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+                          <option value="a_z" {% if filters.sort == 'a_z' %}selected{% endif %}>Error A-Z</option>
+                        </select>
+                      </div>
+                      <div class="control-group">
+                        <label>Time Range</label>
+                        <select name="time_range">
+                          <option value="all" {% if filters.time_range == 'all' %}selected{% endif %}>All Time</option>
+                          <option value="7" {% if filters.time_range == '7' %}selected{% endif %}>Last 7 Days</option>
+                          <option value="30" {% if filters.time_range == '30' %}selected{% endif %}>Last 30 Days</option>
+                          <option value="90" {% if filters.time_range == '90' %}selected{% endif %}>Last 90 Days</option>
+                        </select>
+                      </div>
+                      <div class="control-group">
+                        <label>Specific Date</label>
+                        <input type="date" name="specific_date" value="{{ filters.specific_date }}">
+                      </div>
+                      
+                      <button type="submit" class="btn btn-primary" onclick="clearExactError()">Apply Filters</button>
+                      <a href="/" class="btn">Reset</a>
+                      
+                      <div class="actions-right">
+                        <a href="/" class="btn">Home</a>
+                        <a href="/export?q={{ filters.q }}&sort={{ filters.sort }}&time_range={{ filters.time_range }}&specific_date={{ filters.specific_date }}&exact_error={{ filters.exact_error }}" class="btn btn-primary">Export CSV</a>
+                      </div>
+                      
+                      <input type="hidden" id="exact_error" name="exact_error" value="{{ filters.exact_error }}">
+                    </form>
+
+                    <!-- Exact Error Banner (from Chart Click) -->
+                    {% if filters.exact_error %}
+                    <div class="active-filter-banner">
+                      <span><strong>Filtering Exact Chart Selection:</strong> <span style="font-family: monospace; margin-left: 8px; color: var(--text);">{{ filters.exact_error }}</span></span>
+                      <a href="/" style="color: var(--primary); text-decoration: none; font-weight: bold; font-size: 13px;">? Clear Chart Filter</a>
+                    </div>
+                    {% endif %}
+
+                    <div class="main-grid">
+                      <!-- Left Panel: Table -->
+                      <div class="panel">
+                        <div class="panel-header">
+                          <div class="panel-title">Errors (Table)</div>
+                          <div class="panel-indicator">Rows: {{ total_rows }}</div>
+                        </div>
+                        <div class="panel-body" style="padding: 12px;">
+                          <div class="table-container">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Known Error</th>
+                                  <th style="width: 180px;">Added At (UTC)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {% for row in rows %}
+                                <tr>
+                                  <td style="font-family: monospace; font-size:12px; line-height:1.4;">{{ row["Known Error List"] }}</td>
+                                  <td>{{ row["Added At (UTC)"] }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                  <td colspan="2" style="text-align:center; padding:40px; color:var(--muted);">No matching errors found based on filters.</td>
+                                </tr>
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Right Panel: Chart -->
+                      <div class="panel">
+                        <div class="panel-header">
+                          <div class="panel-title">Error Count (Bar Chart)</div>
+                          <div class="panel-indicator">Unique errors: {{ unique_errors }}</div>
+                        </div>
+                        <div class="panel-body">
+                          <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px; font-weight: 600;">Metric Displayed: <span style="color:var(--text);">Total Count</span></div>
+                          <div class="chart-container">
+                            <canvas id="errorChart"></canvas>
+                          </div>
+                        </div>
+                        <div class="chart-footer">
+                          Chart shows SUM(Count) grouped by Known Error List. <strong>Click on any bar</strong> to filter the table to that exact error.
+                        </div>
+                      </div>
+                    </div>
+
+                    <script>
+                      // Clear the exact error if the user manually clicks "Apply Filters" on the main form
+                      function clearExactError() {
+                        document.getElementById('exact_error').value = '';
+                      }
+
+                      const ctx = document.getElementById('errorChart').getContext('2d');
+                      
+                      // Inject python arrays directly into JS
+                      const labels = {{ chart_labels | safe }};
+                      const fullLabels = {{ chart_full_labels | safe }};
+                      const dataValues = {{ chart_values | safe }};
+                      
+                      new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                          labels: labels,
+                          datasets: [{
+                            label: 'Total Count',
+                            data: dataValues,
+                            backgroundColor: '#3b82f6',
+                            borderColor: '#2563eb',
+                            borderWidth: 1,
+                            borderRadius: 4,
+                            hoverBackgroundColor: '#60a5fa'
+                          }]
+                        },
+                        options: {
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          onHover: (event, chartElement) => {
+                            event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+                          },
+                          onClick: (e, elements) => {
+                            if (elements.length > 0) {
+                              // Get the exact error string based on the clicked bar index
+                              const index = elements[0].index;
+                              const fullErrorText = fullLabels[index];
+                              
+                              // Create URL params and redirect to filter table
+                              const urlParams = new URLSearchParams(window.location.search);
+                              urlParams.set('exact_error', fullErrorText);
+                              urlParams.delete('q'); // Clear generic search box to prevent conflict
+                              
+                              window.location.href = '/?' + urlParams.toString();
+                            }
+                          },
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                title: function(ctx) { return 'Signature:'; },
+                                label: function(ctx) { return 'Count: ' + ctx.raw; },
+                                footer: function(ctx) { return fullLabels[ctx[0].dataIndex]; }
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              ticks: {
+                                color: '#94a3b8',
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 10, family: 'Inter' }
+                              },
+                              grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            },
+                            y: {
+                              beginAtZero: true,
+                              ticks: { stepSize: 1, color: '#94a3b8' },
+                              grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                            }
+                          }
+                        }
+                      });
+                    </script>
+                  </body>
+                  </html>
+                  """
+
+                  def get_filtered_data(args):
+                      if not os.path.exists(EXCEL_FILE):
+                          return pd.DataFrame(columns=["Known Error List", "Added At (UTC)"]), 0, 0, [], [], []
+
+                      try:
+                          df = pd.read_excel(EXCEL_FILE, engine="openpyxl")
+                          df.columns = [str(c).strip() for c in df.columns]
+                          
+                          required = ["Known Error List", "Added At (UTC)"]
+                          for c in required:
+                              if c not in df.columns:
+                                  return pd.DataFrame(columns=required), 0, 0, [], [], []
+                                  
+                          df = df.dropna(subset=required, how="all")
+                          df["Known Error List"] = df["Known Error List"].astype(str)
+                          df["_date_parsed"] = pd.to_datetime(df["Added At (UTC)"], errors="coerce", utc=True)
+                          
+                          if "Count" not in df.columns:
+                              df["Count"] = 1
+                          else:
+                              df["Count"] = pd.to_numeric(df["Count"], errors="coerce").fillna(1)
+                          
+                          # 1. Exact Filter (from Chart Click)
+                          exact_error = args.get("exact_error", "").strip()
+                          if exact_error:
+                              df = df[df["Known Error List"] == exact_error]
+                          else:
+                              # Normal search box
+                              q = args.get("q", "").strip()
+                              if q:
+                                  df = df[df["Known Error List"].str.contains(q, case=False, na=False)]
+                          
+                          # 2. Date Filtering
+                          specific_date = args.get("specific_date", "").strip()
+                          time_range = args.get("time_range", "all")
+                          
+                          if specific_date:
+                              try:
+                                  # If specific date is picked, show data exactly for that day
+                                  d_target = pd.to_datetime(specific_date, utc=True).date()
+                                  df = df[df["_date_parsed"].dt.date == d_target]
+                              except:
+                                  pass
+                          elif time_range in ["7", "30", "90"]:
+                              # Filter by X days back
+                              cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=int(time_range))
+                              df = df[df["_date_parsed"] >= cutoff]
+
+                          # 3. Sorting
+                          sort = args.get("sort", "newest")
+                          if sort == "newest":
+                              df = df.sort_values("_date_parsed", ascending=False)
+                          elif sort == "oldest":
+                              df = df.sort_values("_date_parsed", ascending=True)
+                          elif sort == "a_z":
+                              df = df.sort_values("Known Error List", ascending=True)
+
+                          # 4. Aggregation for the Chart
+                          grouped = df.groupby("Known Error List")["Count"].sum().reset_index()
+                          grouped = grouped.sort_values("Count", ascending=False)
+                          
+                          unique_errors = len(grouped)
+                          chart_full_labels = grouped["Known Error List"].tolist()
+                          chart_labels = [ (x[:30] + '..') if len(x) > 30 else x for x in chart_full_labels ]
+                          chart_values = grouped["Count"].tolist()
+
+                          # Format datetimes for UI display
+                          df["Added At (UTC)"] = df["_date_parsed"].dt.strftime("%d-%m-%Y %H:%M:%S").fillna("")
+                          
+                          return df, len(df), unique_errors, chart_labels, chart_full_labels, chart_values
+
+                      except Exception as e:
+                          print("Error filtering data:", e)
+                          return pd.DataFrame(columns=["Known Error List", "Added At (UTC)"]), 0, 0, [], [], []
+
+                  @app.route("/")
+                  def index():
+                      filters = {
+                          "q": request.args.get("q", ""),
+                          "sort": request.args.get("sort", "newest"),
+                          "time_range": request.args.get("time_range", "all"),
+                          "specific_date": request.args.get("specific_date", ""),
+                          "exact_error": request.args.get("exact_error", "")
+                      }
+                      
+                      df, total_rows, unique_errors, c_labels, c_full, c_vals = get_filtered_data(request.args)
+                      rows = df[["Known Error List", "Added At (UTC)"]].to_dict(orient="records")
+                      
+                      return render_template_string(
+                          TEMPLATE,
+                          rows=rows,
+                          total_rows=total_rows,
+                          unique_errors=unique_errors,
+                          filters=filters,
+                          chart_labels=json.dumps(c_labels),
+                          chart_full_labels=json.dumps(c_full),
+                          chart_values=json.dumps(c_vals)
+                      )
+
+                  @app.route("/export")
+                  def export_csv():
+                      df, _, _, _, _, _ = get_filtered_data(request.args)
+                      export_df = df.drop(columns=["_date_parsed"], errors="ignore")
+                      csv_data = export_df.to_csv(index=False)
+                      
+                      return Response(
+                          csv_data,
+                          mimetype="text/csv",
+                          headers={"Content-Disposition": "attachment; filename=log_query_engine_export.csv"}
+                      )
+
+                  if __name__ == "__main__":
+                      app.run(host="0.0.0.0", port=5000, debug=False)
+                  EOF
+
+                # =======================================================================================
+                # SMART BATCH WRAPPER
+                # =======================================================================================
+                - |
+                  cat > /tmp/batch/run_batch.py << 'EOF'
+                  import os
+                  import shutil
+                  import subprocess
+
+                  shared_vol = os.environ.get("APP_DATA_DIR", "/data")
+                  print("--- STEP 1: AUTO-SEEDING EFS DATA ---")
+
+                  os.makedirs(os.path.join(shared_vol, "Input"), exist_ok=True)
+                  os.makedirs(os.path.join(shared_vol, "Output"), exist_ok=True)
+
+                  if os.path.exists("/app/Input"):
+                    shutil.copytree("/app/Input", os.path.join(shared_vol, "Input"), dirs_exist_ok=True)
+                    print("Seeded /app/Input into /data/Input")
+
+                  for dirpath, _, filenames in os.walk("/app"):
+                    for f in filenames:
+                      if f.endswith((".xlsx", ".xls", ".csv")) and "known_error" not in f.lower():
+                        src = os.path.join(dirpath, f)
+                        dst = os.path.join(shared_vol, f)
+                        if not os.path.exists(dst):
+                          try:
+                            shutil.copy2(src, dst)
+                            print(f"Seeded {f} to {dst}")
+                          except Exception:
+                            pass
+
+                  print("\n--- STEP 2: RUNNING BATCH SCRIPT ---")
+                  result = subprocess.run(["python", "batch_process.py"])
+                  print(f"batch_process.py finished with exit code {result.returncode}")
+
+                  print("\n--- STEP 3: OUTPUT HUNTER ---")
+                  expected_filename = "known_error_list.xlsx"
+                  target_path = os.path.join(shared_vol, expected_filename)
+                  found = False
+
+                  for root_dir in ["/app", shared_vol]:
+                    for dirpath, _, filenames in os.walk(root_dir):
+                      for f in filenames:
+                        if f.lower() == expected_filename.lower() and os.path.join(dirpath, f) != target_path:
+                          src = os.path.join(dirpath, f)
+                          try:
+                            shutil.copy2(src, target_path)
+                            print(f"SUCCESS: Hunted down {src} and moved it to {target_path}")
+                            found = True
+                            break
+                          except Exception as e:
+                            print(f"Failed to copy found file: {e}")
+                      if found:
+                        break
+                    if found:
+                      break
+
+                  if not found and not os.path.exists(target_path):
+                    print("WARNING: Could not find known_error_list.xlsx anywhere in the container.")
+                  EOF
+
+                # =======================================================================================
+                # UPDATE DOCKERFILES TO USE AWS PUBLIC ECR REGISTRY
+                # =======================================================================================
+                - |
+                  cat > /tmp/web/Dockerfile << 'EOF'
+                  FROM public.ecr.aws/docker/library/python:3.11-slim
+                  WORKDIR /app
+                  COPY requirements.txt /app/requirements.txt
+                  RUN pip install --no-cache-dir -r /app/requirements.txt
+                  COPY . /app
+                  ENV APP_DATA_DIR=/data
+                  EXPOSE 5000
+                  CMD ["python", "web_app.py"]
+                  EOF
+                  
+                - |
+                  cat > /tmp/batch/Dockerfile << 'EOF'
+                  FROM public.ecr.aws/docker/library/python:3.11-slim
+                  WORKDIR /app
+                  COPY requirements.txt /app/requirements.txt
+                  RUN pip install --no-cache-dir -r /app/requirements.txt
+                  COPY . /app
+                  ENV APP_DATA_DIR=/data
+                  CMD ["python", "run_batch.py"]
+                  EOF
+
+            build:
+              commands:
+                - echo "Building and Pushing WEB image..."
+                - cd /tmp/web
+                - docker build -t $WEB_REPO_URI:$IMAGE_TAG .
+                - docker push $WEB_REPO_URI:$IMAGE_TAG
+                - docker tag $WEB_REPO_URI:$IMAGE_TAG $WEB_REPO_URI:latest
+                - docker push $WEB_REPO_URI:latest
+
+                - echo "Building and Pushing BATCH image..."
+                - cd /tmp/batch
+                - docker build -t $BATCH_REPO_URI:$IMAGE_TAG .
+                - docker push $BATCH_REPO_URI:$IMAGE_TAG
+                - docker tag $BATCH_REPO_URI:$IMAGE_TAG $BATCH_REPO_URI:latest
+                - docker push $BATCH_REPO_URI:latest
+
+            post_build:
+              commands:
+                - echo "Forcing ECS Service update to pull the new :latest Web Image..."
+                - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service $ECS_SERVICE_NAME --force-new-deployment
+
+Outputs:
+  DashboardUrl:
+    Description: "Open this URL in your browser (ALB forwards to Flask dashboard)"
+    Value: !Sub "http://${DashboardAlb.DNSName}"
+
+  StandaloneCodeBuildProject:
+    Description: "Start this CodeBuild project to pull sources (S3 or GitHub) and deploy to ECS."
+    Value: !Ref CodeBuildProject
