@@ -108,6 +108,14 @@ def _fetch_from_secrets_manager(secret_name: str) -> Dict[str, str]:
         return {}
 
 
+# ── Hardcoded fallback values ────────────────────────────────────────────────
+# These are used as a last resort when env vars and Secrets Manager both fail.
+# Agent ID and Alias ID from your AWS Bedrock console (Image 3).
+# Update these if your agent changes.
+_HARDCODED_AGENT_ID       = "HB8PL0CMXJ"   # from Bedrock console → Agent ID
+_HARDCODED_AGENT_ALIAS_ID = "TSTALIASID"    # replace with your real Alias ID
+
+
 def _resolve_credentials() -> Tuple[str, str]:
     """
     Resolve BEDROCK_AGENT_ID and BEDROCK_AGENT_ALIAS_ID.
@@ -115,8 +123,8 @@ def _resolve_credentials() -> Tuple[str, str]:
     Priority:
       1. Environment variables (set by ECS task def Secrets block in AWS,
          or by .env file in local dev)
-      2. Direct Secrets Manager fetch (fallback — only when AWS_SECRETS_NAME is set
-         and env vars are empty)
+      2. Direct Secrets Manager fetch (fallback — AWS_SECRETS_NAME env var)
+      3. Hardcoded values above (final safety net)
     """
     # ── Priority 1: env vars ──────────────────────────────────────────────────
     # In AWS: ECS injects these from Secrets Manager before container starts.
@@ -128,26 +136,42 @@ def _resolve_credentials() -> Tuple[str, str]:
         logger.debug("Bedrock credentials resolved from environment variables.")
         return agent_id, agent_alias_id
 
-    # ── Priority 2: direct Secrets Manager fetch ──────────────────────────────
-    # Fallback for when env vars are not populated.
-    # AWS_SECRETS_NAME should be set to: log-aggregator/bedrock-<env>
-    secret_name = os.getenv("AWS_SECRETS_NAME", "").strip()
-    if secret_name:
-        sm_data = _fetch_from_secrets_manager(secret_name)
-        agent_id       = sm_data.get("BEDROCK_AGENT_ID", "")
-        agent_alias_id = sm_data.get("BEDROCK_AGENT_ALIAS_ID", "")
-        if agent_id and agent_alias_id:
-            logger.debug("Bedrock credentials resolved from Secrets Manager.")
-            return agent_id, agent_alias_id
+    logger.warning(
+        "BEDROCK_AGENT_ID or BEDROCK_AGENT_ALIAS_ID not in env vars. "
+        "Trying Secrets Manager and hardcoded fallback."
+    )
 
-    # ── Neither source worked ────────────────────────────────────────────────
-    # Log a clear message to help diagnose the issue.
+    # ── Priority 2: direct Secrets Manager fetch ──────────────────────────────
+    secret_name = os.getenv("AWS_SECRETS_NAME", "").strip()
+    if not secret_name:
+        # Build the secret name from environment if not set explicitly
+        env_name    = os.getenv("ENVIRONMENT_NAME", os.getenv("ENVIRONMENT", "dev"))
+        secret_name = f"log-aggregator/bedrock-{env_name}"
+        logger.info("AWS_SECRETS_NAME not set — derived: %s", secret_name)
+
+    sm_data = _fetch_from_secrets_manager(secret_name)
+    agent_id       = sm_data.get("BEDROCK_AGENT_ID", "").strip()
+    agent_alias_id = sm_data.get("BEDROCK_AGENT_ALIAS_ID", "").strip()
+
+    if agent_id and agent_alias_id:
+        logger.info("Bedrock credentials resolved from Secrets Manager: %s", secret_name)
+        return agent_id, agent_alias_id
+
+    # ── Priority 3: hardcoded values ─────────────────────────────────────────
+    # Final safety net. Works even when ECS secrets injection and Secrets
+    # Manager are both unavailable.
+    if _HARDCODED_AGENT_ID and _HARDCODED_AGENT_ALIAS_ID:
+        logger.warning(
+            "Using hardcoded Bedrock credentials — "
+            "fix ECS task def Secrets block or Secrets Manager for production."
+        )
+        return _HARDCODED_AGENT_ID, _HARDCODED_AGENT_ALIAS_ID
+
+    # ── Nothing worked ────────────────────────────────────────────────────────
     logger.error(
-        "Bedrock credentials not found. "
-        "In AWS: check that the ECS task definition Secrets block is set. "
-        "In local dev: set BEDROCK_AGENT_ID and BEDROCK_AGENT_ALIAS_ID in .env. "
-        "AWS_SECRETS_NAME env var = '%s'",
-        os.getenv("AWS_SECRETS_NAME", "(not set)"),
+        "Bedrock credentials not found in env vars, Secrets Manager, or hardcoded values. "
+        "In AWS: check ECS task definition Secrets block. "
+        "In local dev: set BEDROCK_AGENT_ID and BEDROCK_AGENT_ALIAS_ID in .env."
     )
     return "", ""
 
