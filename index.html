@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dummy Infra App — SSL Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 60px;
+    }
+
+    header { text-align: center; margin-bottom: 32px; }
+    header h1 { font-size: 1.9rem; font-weight: 700; color: #f8fafc; }
+    header p  { color: #94a3b8; margin-top: 6px; font-size: 0.93rem; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+      gap: 20px;
+      width: 100%;
+      max-width: 1120px;
+    }
+
+    .card {
+      background: #1e2330;
+      border: 1px solid #2d3748;
+      border-radius: 12px;
+      padding: 22px;
+    }
+    .card h2 {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 16px;
+    }
+
+    /* ── SSL status banner ──────────────────────────────────── */
+    #ssl-banner {
+      width: 100%;
+      max-width: 1120px;
+      border-radius: 12px;
+      padding: 18px 26px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: background 0.4s, border-color 0.4s;
+    }
+    #ssl-banner.ok      { background:#0d2818; border:1px solid #16a34a; color:#4ade80; }
+    #ssl-banner.expired { background:#2d0a0a; border:1px solid #dc2626; color:#f87171; }
+    #ssl-banner.warning { background:#2d1f00; border:1px solid #d97706; color:#fbbf24; }
+    #ssl-banner.unknown { background:#1e2330; border:1px solid #475569; color:#94a3b8; }
+    .banner-icon { font-size: 1.6rem; }
+
+    /* ── Tables ─────────────────────────────────────────────── */
+    .info-table { width:100%; border-collapse:collapse; }
+    .info-table tr { border-bottom:1px solid #2d3748; }
+    .info-table tr:last-child { border-bottom:none; }
+    .info-table td { padding:9px 0; font-size:0.87rem; }
+    .info-table td:first-child { color:#94a3b8; width:130px; }
+    .info-table td:last-child  { color:#f1f5f9; font-family:monospace; word-break:break-all; }
+
+    /* ── Badges ─────────────────────────────────────────────── */
+    .badge {
+      display:inline-block; padding:2px 9px;
+      border-radius:99px; font-size:0.75rem; font-weight:700;
+    }
+    .badge.green  { background:#14532d; color:#4ade80; }
+    .badge.red    { background:#450a0a; color:#f87171; }
+    .badge.yellow { background:#451a03; color:#fbbf24; }
+    .badge.blue   { background:#1e3a5f; color:#93c5fd; }
+    .badge.grey   { background:#1e293b; color:#94a3b8; }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn-group { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+    button {
+      padding:8px 16px; border:none; border-radius:8px;
+      font-size:0.85rem; font-weight:600; cursor:pointer;
+      transition:opacity .15s, transform .1s;
+    }
+    button:active  { transform:scale(.97); }
+    button:disabled { opacity:.38; cursor:not-allowed; }
+    .btn-red    { background:#dc2626; color:#fff; }
+    .btn-yellow { background:#d97706; color:#fff; }
+    .btn-blue   { background:#2563eb; color:#fff; }
+    .btn-green  { background:#16a34a; color:#fff; }
+    .btn-grey   { background:#374151; color:#e2e8f0; }
+    .btn-snow   { background:#1d4ed8; color:#fff; }
+    .btn-fix    { background:#b45309; color:#fff; }
+
+    /* ── ServiceNow panel ────────────────────────────────────── */
+    #snow-panel {
+      width:100%; max-width:1120px;
+      border-radius:12px;
+      border:1px solid #1d4ed8;
+      background:#0d1a35;
+      padding:0;
+      margin-bottom:20px;
+      overflow:hidden;
+      display:none;
+    }
+    #snow-panel.visible { display:block; }
+    .snow-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 18px;
+      background:linear-gradient(90deg,#1d4ed8,#1e3a8a);
+    }
+    .snow-header-left { display:flex; align-items:center; gap:10px; }
+    .snow-logo { font-size:1.3rem; }
+    .snow-title { font-size:0.95rem; font-weight:700; color:#fff; }
+    .snow-subtitle { font-size:0.75rem; color:#93c5fd; }
+    .snow-body { padding:16px 18px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media(max-width:600px){ .snow-body{ grid-template-columns:1fr; } }
+    .snow-field label { font-size:0.72rem; color:#64748b; font-weight:600;
+                        text-transform:uppercase; letter-spacing:.06em; }
+    .snow-field .val  { font-size:0.88rem; color:#e2e8f0; margin-top:3px;
+                        font-family:monospace; }
+    .snow-field .val a { color:#60a5fa; text-decoration:none; }
+    .snow-field .val a:hover { text-decoration:underline; }
+    .snow-state-badge {
+      display:inline-block; padding:3px 10px; border-radius:99px;
+      font-size:0.78rem; font-weight:700;
+    }
+    .snow-state-badge.new       { background:#1e3a5f; color:#93c5fd; }
+    .snow-state-badge.progress  { background:#451a03; color:#fbbf24; }
+    .snow-state-badge.resolved  { background:#14532d; color:#4ade80; }
+    .snow-state-badge.closed    { background:#374151; color:#9ca3af; }
+    .snow-footer {
+      padding:10px 18px; border-top:1px solid #1e3a8a;
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    }
+    .snow-footer .note { font-size:0.77rem; color:#64748b; flex:1; }
+    #snowRefreshBtn {
+      background:none; border:1px solid #1d4ed8; color:#60a5fa;
+      border-radius:6px; padding:4px 10px; font-size:0.78rem; cursor:pointer;
+    }
+    #snowRefreshBtn:hover { background:#1e3a5f; }
+    #snowTimeline {
+      width:100%; max-width:1120px;
+      background:#0d1a35; border:1px solid #1e3a8a;
+      border-radius:12px; padding:14px 18px;
+      margin-bottom:20px; display:none;
+    }
+    #snowTimeline.visible { display:block; }
+    #snowTimeline h3 { font-size:0.78rem; color:#64748b; font-weight:700;
+                       text-transform:uppercase; margin-bottom:10px; }
+    .tl-step {
+      display:flex; align-items:flex-start; gap:10px;
+      padding:6px 0; border-bottom:1px solid #1e293b; font-size:0.83rem;
+    }
+    .tl-step:last-child { border-bottom:none; }
+    .tl-icon { font-size:1rem; min-width:20px; }
+    .tl-text { color:#cbd5e1; line-height:1.45; }
+    .tl-text.done    { color:#4ade80; }
+    .tl-text.active  { color:#fbbf24; }
+    .tl-text.waiting { color:#94a3b8; font-style:italic; }
+
+    /* ── Active errors ───────────────────────────────────────── */
+    #errors-list { list-style:none; }
+    #errors-list li {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:9px 0; border-bottom:1px solid #2d3748; font-size:0.86rem;
+    }
+    #errors-list li:last-child { border-bottom:none; }
+    .err-type { font-family:monospace; color:#f87171; }
+    .err-time { color:#64748b; font-size:0.78rem; }
+    #empty-err { color:#475569; font-size:0.86rem; padding:10px 0; }
+
+    /* ── Log tail ────────────────────────────────────────────── */
+    #log-tail {
+      background:#0d1117; border-radius:8px; padding:12px;
+      font-family:monospace; font-size:0.77rem;
+      height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;
+    }
+    #log-tail .le { color:#a3e635; }
+    #log-tail .le-err { color:#f87171; }
+    #log-tail .le-res { color:#34d399; }
+
+    /* ── Remediation section ─────────────────────────────────── */
+    .remediation-steps {
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .step-row {
+      display:flex; align-items:center; gap:12px;
+      padding:12px 14px; border-radius:10px;
+      background:#131a2e; border:1px solid #2d3748;
+      transition:border-color .2s;
+    }
+    .step-row.active  { border-color:#2563eb; }
+    .step-row.done    { border-color:#16a34a; }
+    .step-num {
+      width:28px; height:28px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-size:0.82rem; font-weight:700; flex-shrink:0;
+      background:#2d3748; color:#94a3b8;
+    }
+    .step-row.active .step-num { background:#2563eb; color:#fff; }
+    .step-row.done .step-num   { background:#16a34a; color:#fff; }
+    .step-info { flex:1; }
+    .step-title { font-size:0.87rem; font-weight:600; color:#e2e8f0; }
+    .step-desc  { font-size:0.78rem; color:#64748b; margin-top:2px; }
+    .step-action { flex-shrink:0; }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position:fixed; bottom:24px; right:24px;
+      background:#1e293b; border:1px solid #334155;
+      border-radius:10px; padding:12px 18px;
+      font-size:0.85rem; max-width:320px;
+      opacity:0; transform:translateY(8px);
+      transition:opacity .25s,transform .25s; z-index:999;
+    }
+    #toast.show { opacity:1; transform:translateY(0); }
+    #toast.ok  { border-color:#16a34a; color:#4ade80; }
+    #toast.err { border-color:#dc2626; color:#f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🔒 Dummy Infra App</h1>
+  <p>SSL Certificate Demo — ServiceNow + AWS Bedrock Auto-Remediation</p>
+</header>
+
+<!-- SSL Status Banner -->
+<div id="ssl-banner" class="unknown">
+  <span class="banner-icon" id="bannerIcon">⏳</span>
+  <span id="bannerText">Loading SSL status…</span>
+</div>
+
+<!-- ServiceNow Ticket Panel (hidden until ticket created) -->
+<div id="snow-panel">
+  <div class="snow-header">
+    <div class="snow-header-left">
+      <span class="snow-logo">🎫</span>
+      <div>
+        <div class="snow-title">ServiceNow Incident</div>
+        <div class="snow-subtitle">Auto-created by AWS Bedrock Agent</div>
+      </div>
+    </div>
+    <span id="snowHeaderBadge" class="snow-state-badge new">New</span>
+  </div>
+  <div class="snow-body">
+    <div class="snow-field">
+      <label>Ticket Number</label>
+      <div class="val"><a id="snowTicketLink" href="#" target="_blank" rel="noopener" id="snowTicketNum">—</a></div>
+    </div>
+    <div class="snow-field">
+      <label>Priority</label>
+      <div class="val" id="snowPriority">1 - Critical</div>
+    </div>
+    <div class="snow-field">
+      <label>Category</label>
+      <div class="val" id="snowCategory">Security</div>
+    </div>
+    <div class="snow-field">
+      <label>Assigned To</label>
+      <div class="val" id="snowAssigned">AWS Operations</div>
+    </div>
+    <div class="snow-field" style="grid-column:1/-1;">
+      <label>Description</label>
+      <div class="val" id="snowDesc" style="font-family:inherit;color:#94a3b8;">—</div>
+    </div>
+  </div>
+  <div class="snow-footer">
+    <span class="note" id="snowNote">Polling status every 30s…</span>
+    <button id="snowRefreshBtn" onclick="pollSnowTicket()">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Remediation Timeline (hidden until flow starts) -->
+<div id="snowTimeline">
+  <h3>⚡ Remediation Timeline</h3>
+  <div id="tlSteps"></div>
+</div>
+
+<div class="grid">
+
+  <!-- SSL Certificate Details -->
+  <div class="card">
+    <h2>🔐 SSL Certificate</h2>
+    <table class="info-table">
+      <tr><td>Domain</td>    <td id="certDomain">—</td></tr>
+      <tr><td>Status</td>    <td id="certStatus"><span class="badge grey">unknown</span></td></tr>
+      <tr><td>Cert ARN</td>  <td id="certArn">—</td></tr>
+      <tr><td>Issued</td>    <td id="certIssued">—</td></tr>
+      <tr><td>Expires</td>   <td id="certExpires">—</td></tr>
+      <tr><td>Days Left</td> <td id="certDays">—</td></tr>
+    </table>
+  </div>
+
+  <!-- Remediation Steps Panel -->
+  <div class="card">
+    <h2>🤖 Auto-Remediation Flow</h2>
+    <div class="remediation-steps">
+
+      <!-- Step 1 -->
+      <div class="step-row" id="step1row">
+        <div class="step-num" id="step1num">1</div>
+        <div class="step-info">
+          <div class="step-title">Trigger SSL Error</div>
+          <div class="step-desc">Inject ssl_expired into log → ship to S3 → Lambda processes it</div>
+        </div>
+        <div class="step-action">
+          <button class="btn-red" id="btnTrigger" onclick="triggerSSL()">
+            🔴 Trigger SSL Expired
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step-row" id="step2row">
+        <div class="step-num" id="step2num">2</div>
+        <div class="step-info">
+          <div class="step-title">Create ServiceNow Ticket</div>
+          <div class="step-desc">Bedrock Agent → servicenow_action_group → createIncident()</div>
+        </div>
+        <div class="step-action">
+          <button class="btn-snow" id="btnSnow" onclick="createSnowTicket()" disabled>
+            🎫 Create Ticket
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step-row" id="step3row">
+        <div class="step-num" id="step3num">3</div>
+        <div class="step-info">
+          <div class="step-title">Fix SSL Issue</div>
+          <div class="step-desc">Bedrock Agent → ssl_remediation_action_group → remediateSSL()</div>
+        </div>
+        <div class="step-action">
+          <button class="btn-fix" id="btnFix" onclick="fixSSL()" disabled>
+            ⚡ Fix Issue
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Active Errors -->
+  <div class="card">
+    <h2>🚨 Active Errors</h2>
+    <ul id="errors-list">
+      <li><span id="empty-err">No active errors — system healthy ✅</span></li>
+    </ul>
+  </div>
+
+  <!-- Service Health -->
+  <div class="card">
+    <h2>📊 Service Health</h2>
+    <table class="info-table">
+      <tr><td>App Status</td>    <td id="appStatus"><span class="badge grey">checking…</span></td></tr>
+      <tr><td>Error Count</td>   <td id="errCount">—</td></tr>
+      <tr><td>S3 Bucket</td>     <td id="s3Bucket">—</td></tr>
+      <tr><td>Last Ship</td>     <td id="lastShip">—</td></tr>
+    </table>
+    <div style="margin-top:14px;" class="btn-group">
+      <button class="btn-blue"  onclick="refreshAll()">🔄 Refresh</button>
+      <button class="btn-green" onclick="shipNow()">📤 Ship Logs Now</button>
+      <button class="btn-grey"  onclick="resetFlow()">↺ Reset Flow</button>
+    </div>
+  </div>
+
+  <!-- Other Error Types -->
+  <div class="card">
+    <h2>🛠 Other Error Types</h2>
+    <p style="color:#64748b;font-size:0.82rem;margin-bottom:12px;">
+      Trigger other errors to populate the Dashboard error table.
+    </p>
+    <div class="btn-group">
+      <button class="btn-yellow" onclick="triggerError('ssl_expiring')">SSL Expiring</button>
+      <button class="btn-grey"   onclick="triggerError('password_expired')">Password Expired</button>
+      <button class="btn-grey"   onclick="triggerError('db_storage')">DB Storage</button>
+      <button class="btn-grey"   onclick="triggerError('db_connection')">DB Connection</button>
+      <button class="btn-grey"   onclick="triggerError('compute_overload')">Compute Overload</button>
+    </div>
+  </div>
+
+  <!-- Log Tail -->
+  <div class="card" style="grid-column:1/-1;">
+    <h2>📜 Recent Logs</h2>
+    <div id="log-tail">Loading…</div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentTicketNumber = '';
+let currentTicketUrl    = '';
+let snowPollTimer       = null;
+let flowStep            = 0;   // 0=idle, 1=triggered, 2=ticket_created, 3=fixed
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 4000);
+}
+
+// ── Flow step helpers ─────────────────────────────────────────────────────────
+function markStep(num, state) {
+  const row = document.getElementById(`step${num}row`);
+  const numEl = document.getElementById(`step${num}num`);
+  if (!row) return;
+  row.className = 'step-row ' + (state === 'done' ? 'done' : state === 'active' ? 'active' : '');
+  numEl.textContent = state === 'done' ? '✓' : num;
+}
+
+function setBtn(id, enabled, text) {
+  const b = document.getElementById(id);
+  if (!b) return;
+  b.disabled = !enabled;
+  if (text) b.textContent = text;
+}
+
+function resetFlow() {
+  flowStep = 0;
+  currentTicketNumber = '';
+  currentTicketUrl    = '';
+  if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
+  document.getElementById('snow-panel').classList.remove('visible');
+  document.getElementById('snowTimeline').classList.remove('visible');
+  markStep(1, ''); markStep(2, ''); markStep(3, '');
+  setBtn('btnTrigger', true, '🔴 Trigger SSL Expired');
+  setBtn('btnSnow',   false, '🎫 Create Ticket');
+  setBtn('btnFix',    false, '⚡ Fix Issue');
+  refreshAll();
+}
+
+// ── Timeline ──────────────────────────────────────────────────────────────────
+const TL_STEPS = [
+  { icon: '🔴', text: 'SSL expired error injected into logs' },
+  { icon: '📤', text: 'Log file shipped to S3 raw-logs bucket' },
+  { icon: '⚙️',  text: 'Lambda processor converts log → unique_errors.json' },
+  { icon: '🎫', text: 'Bedrock Agent creates ServiceNow incident' },
+  { icon: '⚡', text: 'Bedrock Agent calls ssl_remediation_action_group → remediateSSL()' },
+  { icon: '🔑', text: 'SSL Lambda generates cert ARN (demo) / renews via ACM (real)' },
+  { icon: '💾', text: 'Cert ARN stored in Secrets Manager (dummy-app/ssl-cert-arn)' },
+  { icon: '📣', text: 'Dummy app notified → RESOLVED log line written' },
+  { icon: '✅', text: 'ServiceNow ticket updated with work note + Resolved status' },
+];
+
+function showTimeline(completedUpTo) {
+  const tl = document.getElementById('snowTimeline');
+  const steps = document.getElementById('tlSteps');
+  tl.classList.add('visible');
+  steps.innerHTML = TL_STEPS.map((s, i) => {
+    const cls = i < completedUpTo ? 'done' : i === completedUpTo ? 'active' : 'waiting';
+    return `<div class="tl-step">
+      <span class="tl-icon">${s.icon}</span>
+      <span class="tl-text ${cls}">${s.text}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── SSL Banner ────────────────────────────────────────────────────────────────
+function updateBanner(state) {
+  const b   = document.getElementById('ssl-banner');
+  const ico = document.getElementById('bannerIcon');
+  const txt = document.getElementById('bannerText');
+  const MAP = {
+    ok:      { cls:'ok',      icon:'✅', msg:'SSL Certificate is VALID — all systems nominal' },
+    expired: { cls:'expired', icon:'🔴', msg:'SSL Certificate has EXPIRED — remediation required' },
+    warning: { cls:'warning', icon:'⚠️',  msg:'SSL Certificate is EXPIRING SOON — rotation recommended' },
+    unknown: { cls:'unknown', icon:'❓', msg:'SSL Certificate status unknown' },
+  };
+  const cfg = MAP[state] || MAP.unknown;
+  b.className = cfg.cls;
+  ico.textContent = cfg.icon;
+  txt.textContent = cfg.msg;
+}
+
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
+async function fetchStatus() {
+  try {
+    const d = await (await fetch('/api/dummy/status')).json();
+    document.getElementById('errCount').textContent = d.error_count ?? 0;
+    document.getElementById('appStatus').innerHTML = '<span class="badge green">healthy</span>';
+
+    const ssl = d.ssl_cert || {};
+    document.getElementById('certDomain').textContent  = ssl.domain || 'api.dummy-app.internal';
+    document.getElementById('certArn').textContent     = ssl.cert_arn ? '…' + ssl.cert_arn.slice(-28) : 'not provisioned';
+    document.getElementById('certIssued').textContent  = ssl.issued_at  ? new Date(ssl.issued_at).toLocaleString()  : '—';
+    document.getElementById('certExpires').textContent = ssl.expires_at ? new Date(ssl.expires_at).toLocaleString() : '—';
+    document.getElementById('certDays').textContent    = ssl.days_remaining ?? '—';
+
+    const active = (d.active_errors || []).filter(e => e.status === 'active');
+    const hasExp  = active.some(e => e.type === 'ssl_expired');
+    const hasWarn = active.some(e => e.type === 'ssl_expiring');
+
+    if (hasExp) {
+      updateBanner('expired');
+      document.getElementById('certStatus').innerHTML = '<span class="badge red">EXPIRED</span>';
+    } else if (hasWarn) {
+      updateBanner('warning');
+      document.getElementById('certStatus').innerHTML = '<span class="badge yellow">EXPIRING SOON</span>';
+    } else if (ssl.cert_arn) {
+      updateBanner('ok');
+      document.getElementById('certStatus').innerHTML = '<span class="badge green">VALID</span>';
+    } else {
+      updateBanner('unknown');
+      document.getElementById('certStatus').innerHTML = '<span class="badge grey">NOT SET</span>';
+    }
+
+    renderErrors(active);
+  } catch (e) {
+    document.getElementById('appStatus').innerHTML = '<span class="badge red">unreachable</span>';
+  }
+}
+
+async function fetchHealth() {
+  try {
+    const d = await (await fetch('/health')).json();
+    document.getElementById('s3Bucket').textContent = d.raw_logs_bucket || '(not set)';
+    document.getElementById('lastShip').textContent = d.last_ship || 'never';
+  } catch (_) {}
+}
+
+async function fetchLogs() {
+  try {
+    const d = await (await fetch('/api/dummy/logs?lines=25')).json();
+    const tail = document.getElementById('log-tail');
+    tail.innerHTML = (d.lines || []).map(line => {
+      const cls = line.includes('[ERROR]') ? 'le-err' :
+                  line.includes('RESOLVED') ? 'le-res' : 'le';
+      return `<div class="${cls}">${line}</div>`;
+    }).join('');
+    tail.scrollTop = tail.scrollHeight;
+  } catch (e) {
+    document.getElementById('log-tail').textContent = 'Could not load logs: ' + e.message;
+  }
+}
+
+function renderErrors(active) {
+  const list = document.getElementById('errors-list');
+  if (!active.length) {
+    list.innerHTML = '<li><span id="empty-err">No active errors — system healthy ✅</span></li>';
+    return;
+  }
+  list.innerHTML = active.map(e => `
+    <li>
+      <span class="err-type">${e.type}</span>
+      <span class="err-time">${e.triggered_at ? new Date(e.triggered_at).toLocaleTimeString() : ''}</span>
+      <span class="badge red">active</span>
+    </li>`).join('');
+}
+
+// ── ServiceNow panel ──────────────────────────────────────────────────────────
+function showSnowPanel(num, url, state, priority, category, desc) {
+  currentTicketNumber = num;
+  currentTicketUrl    = url;
+  const panel = document.getElementById('snow-panel');
+  panel.classList.add('visible');
+  document.getElementById('snowTicketLink').textContent = num;
+  document.getElementById('snowTicketLink').href = url || '#';
+  document.getElementById('snowPriority').textContent  = priority || '1 - Critical';
+  document.getElementById('snowCategory').textContent  = category || 'Security';
+  document.getElementById('snowDesc').textContent      = desc || '—';
+  updateSnowBadge(state || 'New');
+}
+
+function updateSnowBadge(stateLabel) {
+  const badge = document.getElementById('snowHeaderBadge');
+  const s = stateLabel.toLowerCase();
+  badge.textContent = stateLabel;
+  badge.className = 'snow-state-badge ' +
+    (s.includes('progress') ? 'progress' :
+     s.includes('resolv') || s.includes('clos') ? 'resolved' : 'new');
+}
+
+async function pollSnowTicket() {
+  if (!currentTicketNumber) return;
+  if (currentTicketNumber.startsWith('INC_DEMO') || currentTicketNumber === 'INC_STUB_001') {
+    document.getElementById('snowNote').textContent = 'Demo mode — no live ServiceNow polling.';
+    return;
+  }
+  try {
+    const d = await (await fetch('/api/snow-ticket/' + encodeURIComponent(currentTicketNumber))).json();
+    updateSnowBadge(d.state_label || 'New');
+    if (d.ticket_url) {
+      document.getElementById('snowTicketLink').href = d.ticket_url;
+      currentTicketUrl = d.ticket_url;
+    }
+    document.getElementById('snowNote').textContent =
+      `Last polled: ${new Date().toLocaleTimeString()}`;
+    if ((d.state_label || '').toLowerCase().includes('resolv')) {
+      if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
+      document.getElementById('snowNote').textContent = '✅ Ticket resolved — polling stopped.';
+    }
+  } catch (_) {}
+}
+
+function startSnowPolling() {
+  if (snowPollTimer) clearInterval(snowPollTimer);
+  let ticks = 0;
+  snowPollTimer = setInterval(() => {
+    ticks++;
+    pollSnowTicket();
+    if (ticks >= 20) clearInterval(snowPollTimer);
+  }, 30000);
+}
+
+// ── STEP 1: Trigger SSL error ─────────────────────────────────────────────────
+async function triggerSSL() {
+  setBtn('btnTrigger', false, '⏳ Triggering…');
+  markStep(1, 'active');
+  showTimeline(0);
+  try {
+    const r = await fetch('/api/dummy/trigger-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error_type: 'ssl_expired' }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    toast('✅ ssl_expired triggered. Log shipped to S3.', 'ok');
+    markStep(1, 'done');
+    markStep(2, 'active');
+    setBtn('btnTrigger', false, '✓ Triggered');
+    setBtn('btnSnow',    true,  '🎫 Create Ticket');
+    flowStep = 1;
+    showTimeline(2);
+    await refreshAll();
+  } catch (e) {
+    toast('❌ Trigger failed: ' + e.message, 'err');
+    markStep(1, '');
+    setBtn('btnTrigger', true, '🔴 Trigger SSL Expired');
+  }
+}
+
+// ── STEP 2: Create ServiceNow ticket ─────────────────────────────────────────
+async function createSnowTicket() {
+  setBtn('btnSnow', false, '⏳ Creating ticket…');
+  markStep(2, 'active');
+  showTimeline(3);
+  try {
+    const r = await fetch('/api/create-snow-ticket', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: {
+          'Error Code':   '9010',
+          'Status Code':  '495',
+          'Description':  'SSL certificate expired for domain api.dummy-app.internal',
+          'API':          'GET /api/dummy/status',
+          'Count':        '1',
+          'Last Seen':    new Date().toISOString(),
+        }
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    const num = d.ticket_number || 'INC_DEMO_001';
+    const url = d.ticket_url    || '#';
+
+    showSnowPanel(
+      num, url, 'New',
+      '1 - Critical', 'Security',
+      'SSL certificate expired for domain api.dummy-app.internal — auto-detected by AWS Log Aggregator'
+    );
+    startSnowPolling();
+
+    toast(`✅ ServiceNow ticket created: ${num}`, 'ok');
+    markStep(2, 'done');
+    markStep(3, 'active');
+    setBtn('btnSnow', false, '✓ ' + num);
+    setBtn('btnFix',  true,  '⚡ Fix Issue');
+    flowStep = 2;
+    showTimeline(4);
+  } catch (e) {
+    toast('❌ Ticket creation failed: ' + e.message, 'err');
+    markStep(2, 'active');
+    setBtn('btnSnow', true, '🎫 Create Ticket');
+  }
+}
+
+// ── STEP 3: Fix SSL issue ─────────────────────────────────────────────────────
+async function fixSSL() {
+  setBtn('btnFix', false, '⏳ Fixing…');
+  markStep(3, 'active');
+  showTimeline(5);
+  try {
+    const r = await fetch('/api/fix-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: {
+          'Error Code':  '9010',
+          'Status Code': '495',
+          'Description': 'SSL certificate expired for domain api.dummy-app.internal',
+          'API':         'GET /api/dummy/status',
+          'Count':       '1',
+          'Last Seen':   new Date().toISOString(),
+        },
+        ticket_number: currentTicketNumber,
+        session_id:    '',
+        history:       [],
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    // Ticket resolved
+    updateSnowBadge('Resolved');
+    document.getElementById('snowNote').textContent = '✅ Ticket resolved by auto-remediation.';
+    if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
+
+    markStep(3, 'done');
+    setBtn('btnFix', false, '✓ Fixed');
+    flowStep = 3;
+    showTimeline(TL_STEPS.length);
+    toast('✅ SSL issue fixed! Ticket resolved.', 'ok');
+    await refreshAll();
+  } catch (e) {
+    toast('❌ Fix failed: ' + e.message, 'err');
+    markStep(3, 'active');
+    setBtn('btnFix', true, '⚡ Fix Issue');
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function triggerError(type) {
+  toast(`Triggering ${type}…`);
+  try {
+    const r = await fetch('/api/dummy/trigger-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error_type: type }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    toast(`✅ ${type} triggered`, 'ok');
+    await refreshAll();
+  } catch (e) { toast('❌ ' + e.message, 'err'); }
+}
+
+async function shipNow() {
+  toast('Shipping logs to S3…');
+  try {
+    const r = await fetch('/api/dummy/ship-now', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    toast('✅ Shipped: ' + (d.s3_key || ''), 'ok');
+    await fetchHealth();
+  } catch (e) { toast('❌ ' + e.message, 'err'); }
+}
+
+async function refreshAll() {
+  await Promise.all([fetchStatus(), fetchHealth(), fetchLogs()]);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+refreshAll();
+setInterval(refreshAll, 15000);
+</script>
+</body>
+</html>
