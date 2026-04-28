@@ -43,33 +43,41 @@ from log_shipper import LogShipper
 
 def _resolve_log_dir() -> str:
     """
-    Resolve the log directory with this priority:
-      1. LOG_DIR env var — set in ECS task definition for container path
-      2. /app/Dummy-infra-app/logs — standard container path (Dockerfile)
-      3. <script_dir>/logs — local dev fallback, always works
+    Resolve the log directory:
 
-    The chosen directory will contain:
-      app.log          — Flask access log (never shipped)
-      ssl_events.log   — Error/resolution events (shipped to S3)
-      application.log  — Mirror of ssl_events.log (what actually goes to S3)
+      1. LOG_DIR env var — explicitly set (ECS task definition uses this)
+      2. /app/Dummy-infra-app/logs — ONLY on Linux inside a real container
+      3. <script_dir>/logs — always used for local dev on Windows/Mac
+
+    Why not use the container path on Windows:
+      os.makedirs('/app/...') succeeds on Windows (creates C:\\app\\...)
+      and the probe write also passes, so the wrong path would be returned.
+      Gating on sys.platform prevents that entirely.
     """
+    import sys
+
+    # Priority 1: explicit override (ECS sets LOG_DIR)
     env_dir = os.getenv("LOG_DIR", "")
     if env_dir:
         os.makedirs(env_dir, exist_ok=True)
         return env_dir
 
-    container_path = "/app/Dummy-infra-app/logs"
-    try:
-        os.makedirs(container_path, exist_ok=True)
-        probe = os.path.join(container_path, ".probe")
-        with open(probe, "w") as f:
-            f.write("ok")
-        os.remove(probe)
-        return container_path
-    except (OSError, PermissionError):
-        pass
+    # Priority 2: real Linux container path — skipped on Windows/macOS
+    if sys.platform == "linux":
+        container_path = "/app/Dummy-infra-app/logs"
+        try:
+            os.makedirs(container_path, exist_ok=True)
+            probe = os.path.join(container_path, ".probe")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+            return container_path
+        except (OSError, PermissionError):
+            pass
 
-    # Local dev: creates  dummy-infra-app/logs/  next to this script
+    # Priority 3: local dev fallback — always works on Windows/macOS/Linux
+    # Creates dummy-infra-app/logs/ next to this script file.
+    # On Windows: C:\Users\10822051\Downloads\log-aggregator\dummy-infra-app\logs\
     local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
     os.makedirs(local_path, exist_ok=True)
     return local_path
