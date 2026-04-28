@@ -1,0 +1,57 @@
+[
+  {
+    "Status Code": "401",
+    "Error Code": "9012",
+    "Description": "Service account password expired, authentication failed",
+    "API": "POST /api/dummy/auth",
+    "Count": 2,
+    "Last Seen": "2026-04-28T08:40:33",
+    "Dates": [
+      "2026-04-28"
+    ]
+  },
+  {
+    "Status Code": "495",
+    "Error Code": "9010",
+    "Description": "SSL certificate expired for domain api.dummy-app.internal",
+    "API": "GET /api/dummy/status",
+    "Count": 1,
+    "Last Seen": "2026-04-28T08:21:18",
+    "Dates": [
+      "2026-04-28"
+    ]
+  },
+  {
+    "Status Code": "503",
+    "Error Code": "9015",
+    "Description": "CPU at 95%, memory at 88%, dropping requests",
+    "API": "POST /api/dummy/process",
+    "Count": 2,
+    "Last Seen": "2026-04-28T08:40:29",
+    "Dates": [
+      "2026-04-28"
+    ]
+  },
+  {
+    "Status Code": "504",
+    "Error Code": "9014",
+    "Description": "RDS connection pool exhausted, timeout after 30s",
+    "API": "GET /api/dummy/db-read",
+    "Count": 3,
+    "Last Seen": "2026-04-28T08:40:30",
+    "Dates": [
+      "2026-04-28"
+    ]
+  },
+  {
+    "Status Code": "507",
+    "Error Code": "9013",
+    "Description": "Database storage at 92% capacity, writes may fail",
+    "API": "POST /api/dummy/db-write",
+    "Count": 1,
+    "Last Seen": "2026-04-28T08:40:32",
+    "Dates": [
+      "2026-04-28"
+    ]
+  }
+]
