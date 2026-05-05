@@ -1,779 +1,750 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dummy Infra App — SSL Demo</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Toilet Management — Dummy App</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap');
+    :root{
+      --bg:#f8f5f2;--panel:#fff;--ink:#1a1a1a;--muted:#5b544d;--line:#e6ddd6;
+      --accent:#ff7a1a;--danger:#c03a3a;--warn:#b85a00;--ok:#2f7a3f;
+      --purple:#7c3aed;
+      --shadow:0 2px 12px rgba(15,43,70,.08),0 1px 3px rgba(15,43,70,.05);
+      --r:16px;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:"Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);min-height:100vh;
+      background:radial-gradient(1200px 600px at 5% -8%,#fff0df,transparent 48%),
+                 radial-gradient(900px 600px at 100% 0,#ffe4c8,transparent 50%),var(--bg);}
+    .wrap{width:min(1140px,92vw);margin:28px auto 60px;}
 
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 32px 20px 60px;
-    }
+    /* ── Hero ─────────────────────────────────────────────────────────────── */
+    .hero{background:linear-gradient(130deg,#0f0f0f 0%,#2a2520 55%,#ff7a1a 100%);
+      color:#fff;border-radius:22px;padding:26px 30px;margin-bottom:22px;
+      box-shadow:0 16px 40px rgba(5,0,74,.32);position:relative;overflow:hidden;}
+    .hero::before{content:'';position:absolute;inset:0;pointer-events:none;
+      background:radial-gradient(circle at 80% -10%,rgba(255,255,255,.15),transparent 55%),
+                 radial-gradient(circle at 8% 108%,rgba(255,255,255,.11),transparent 48%);}
+    .hero-row{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;position:relative;}
+    .hero-icon{font-size:2rem;margin-bottom:8px;display:block;}
+    .hero h1{font-family:"Space Grotesk",sans-serif;font-size:clamp(1.2rem,2vw,1.8rem);font-weight:800;}
+    .hero p{margin-top:5px;color:rgba(255,255,255,.82);font-size:.9rem;}
+    .hero-badges{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px;}
+    .hbadge{background:rgba(255,255,255,.17);border:1px solid rgba(255,255,255,.28);
+      border-radius:99px;font-size:.72rem;font-weight:700;padding:3px 10px;}
+    .nav-links{display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex-shrink:0;}
+    .nav-link{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.15);
+      border:1px solid rgba(255,255,255,.3);color:#fff;text-decoration:none;
+      font-size:.8rem;font-weight:600;padding:7px 14px;border-radius:9px;
+      transition:background .2s;white-space:nowrap;}
+    .nav-link:hover{background:rgba(255,255,255,.25);}
 
-    header { text-align: center; margin-bottom: 32px; }
-    header h1 { font-size: 1.9rem; font-weight: 700; color: #f8fafc; }
-    header p  { color: #94a3b8; margin-top: 6px; font-size: 0.93rem; }
+    /* ── Stats ─────────────────────────────────────────────────────────────── */
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+    @media(max-width:680px){.stats{grid-template-columns:repeat(2,1fr);}}
+    .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+      padding:16px 16px 12px;box-shadow:var(--shadow);position:relative;overflow:hidden;}
+    .stat::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+      border-radius:var(--r) var(--r) 0 0;}
+    .stat.total::after{background:linear-gradient(90deg,#121212,#ff7a1a);}
+    .stat.errors::after{background:linear-gradient(90deg,#c03a3a,#dd6464);}
+    .stat.active::after{background:linear-gradient(90deg,#b85a00,#f0923a);}
+    .stat.fixed::after{background:linear-gradient(90deg,#7c3aed,#a78bfa);}
+    .stat-lbl{font-size:.7rem;font-weight:600;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+    .stat-val{font-size:1.9rem;font-weight:800;letter-spacing:-1px;line-height:1;}
+    .stat.total  .stat-val{color:var(--ink);}
+    .stat.errors .stat-val{color:var(--danger);}
+    .stat.active .stat-val{color:var(--warn);}
+    .stat.fixed  .stat-val{color:var(--purple);}
+    .stat-sub{font-size:.7rem;color:var(--muted);margin-top:3px;}
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-      gap: 20px;
-      width: 100%;
-      max-width: 1120px;
-    }
+    /* ── Cards ─────────────────────────────────────────────────────────────── */
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+      box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px;}
+    .card-hdr{display:flex;align-items:center;gap:9px;padding:13px 18px 11px;
+      border-bottom:1px solid var(--line);}
+    .card-hdr h2{font-size:.9rem;font-weight:700;flex:1;}
+    .ico{width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(160deg,#fff1e3,#ffe2c3);border:1px solid #e5cbb1;
+      border-radius:7px;font-size:.88rem;flex-shrink:0;}
+    .card-body{padding:16px 18px;}
 
-    .card {
-      background: #1e2330;
-      border: 1px solid #2d3748;
-      border-radius: 12px;
-      padding: 22px;
-    }
-    .card h2 {
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      margin-bottom: 16px;
-    }
+    /* ── Triggered Errors Table ─────────────────────────────────────────────── */
+    .tbl-wrap{overflow-x:auto;}
+    table.etbl{width:100%;border-collapse:collapse;font-size:.82rem;}
+    .etbl thead th{text-align:left;padding:9px 12px;background:#faf8f6;
+      color:var(--muted);font-weight:700;font-size:.7rem;text-transform:uppercase;
+      letter-spacing:.04em;border-bottom:1px solid var(--line);}
+    .etbl tbody tr{border-bottom:1px solid var(--line);transition:background .1s;}
+    .etbl tbody tr:last-child{border-bottom:none;}
+    .etbl tbody tr:hover{background:#fdf6f0;}
+    .etbl td{padding:10px 12px;vertical-align:middle;}
+    .etbl .c-name{font-weight:600;font-size:.83rem;}
+    .etbl .c-code{font-family:monospace;font-size:.78rem;color:var(--muted);}
+    .etbl .c-api{font-family:monospace;font-size:.73rem;color:var(--muted);
+      max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .etbl .c-ts{font-size:.72rem;color:var(--muted);}
+    .empty-row td{text-align:center;color:var(--muted);font-size:.82rem;
+      padding:28px;font-style:italic;}
 
-    /* ── SSL status banner ──────────────────────────────────── */
-    #ssl-banner {
-      width: 100%;
-      max-width: 1120px;
-      border-radius: 12px;
-      padding: 18px 26px;
-      margin-bottom: 24px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      font-size: 1rem;
-      font-weight: 600;
-      transition: background 0.4s, border-color 0.4s;
-    }
-    #ssl-banner.ok      { background:#0d2818; border:1px solid #16a34a; color:#4ade80; }
-    #ssl-banner.expired { background:#2d0a0a; border:1px solid #dc2626; color:#f87171; }
-    #ssl-banner.warning { background:#2d1f00; border:1px solid #d97706; color:#fbbf24; }
-    #ssl-banner.unknown { background:#1e2330; border:1px solid #475569; color:#94a3b8; }
-    .banner-icon { font-size: 1.6rem; }
+    /* chips */
+    .chip{display:inline-flex;align-items:center;gap:3px;font-size:.7rem;font-weight:700;
+      padding:3px 9px;border-radius:20px;white-space:nowrap;}
+    .chip-idle     {background:#f0ece8;color:var(--muted);}
+    .chip-triggered{background:rgba(192,58,58,.12);color:var(--danger);}
+    .chip-resolved {background:rgba(47,122,63,.12);color:var(--ok);}
+    .chip-fixed    {background:rgba(124,58,237,.12);color:var(--purple);}
 
-    /* ── Tables ─────────────────────────────────────────────── */
-    .info-table { width:100%; border-collapse:collapse; }
-    .info-table tr { border-bottom:1px solid #2d3748; }
-    .info-table tr:last-child { border-bottom:none; }
-    .info-table td { padding:9px 0; font-size:0.87rem; }
-    .info-table td:first-child { color:#94a3b8; width:130px; }
-    .info-table td:last-child  { color:#f1f5f9; font-family:monospace; word-break:break-all; }
+    /* pills */
+    .pill{display:inline-block;padding:2px 7px;border-radius:5px;font-size:.7rem;font-weight:700;}
+    .p5{background:#fdecea;color:#c03a3a;}
+    .p4{background:#fff3e0;color:#b85a00;}
+    .p2{background:#edf7f0;color:#2f7a3f;}
+    .pm{background:#f0e8ff;color:#7c3aed;}
 
-    /* ── Badges ─────────────────────────────────────────────── */
-    .badge {
-      display:inline-block; padding:2px 9px;
-      border-radius:99px; font-size:0.75rem; font-weight:700;
-    }
-    .badge.green  { background:#14532d; color:#4ade80; }
-    .badge.red    { background:#450a0a; color:#f87171; }
-    .badge.yellow { background:#451a03; color:#fbbf24; }
-    .badge.blue   { background:#1e3a5f; color:#93c5fd; }
-    .badge.grey   { background:#1e293b; color:#94a3b8; }
+    /* row action buttons */
+    .ra{border:none;border-radius:6px;font-family:inherit;font-weight:700;
+      font-size:.72rem;padding:5px 11px;cursor:pointer;
+      transition:opacity .15s,transform .1s;white-space:nowrap;
+      display:inline-flex;align-items:center;gap:4px;}
+    .ra:hover:not(:disabled){opacity:.85;transform:translateY(-1px);}
+    .ra:disabled{opacity:.4;cursor:default;}
+    .ra-trigger {background:var(--danger);color:#fff;}
+    .ra-resolve {background:var(--ok);color:#fff;}
+    .ra-dash    {background:#0085c8;color:#fff;text-decoration:none;}
 
-    /* ── Buttons ─────────────────────────────────────────────── */
-    .btn-group { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
-    button {
-      padding:8px 16px; border:none; border-radius:8px;
-      font-size:0.85rem; font-weight:600; cursor:pointer;
-      transition:opacity .15s, transform .1s;
-    }
-    button:active  { transform:scale(.97); }
-    button:disabled { opacity:.38; cursor:not-allowed; }
-    .btn-red    { background:#dc2626; color:#fff; }
-    .btn-yellow { background:#d97706; color:#fff; }
-    .btn-blue   { background:#2563eb; color:#fff; }
-    .btn-green  { background:#16a34a; color:#fff; }
-    .btn-grey   { background:#374151; color:#e2e8f0; }
-    .btn-snow   { background:#1d4ed8; color:#fff; }
-    .btn-fix    { background:#b45309; color:#fff; }
+    /* ── Scenario Cards ─────────────────────────────────────────────────────── */
+    .sc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));
+      gap:12px;padding:16px;}
+    .sc-card{border:1.5px solid var(--line);border-radius:12px;padding:14px 15px;
+      background:#faf8f6;transition:border-color .2s,box-shadow .2s,background .2s;
+      position:relative;}
+    .sc-card:hover{border-color:#ffc299;background:#fff;
+      box-shadow:0 4px 14px rgba(255,122,26,.12);}
+    .sc-card.s-triggered{border-color:var(--danger);background:#fff8f8;}
+    .sc-card.s-resolved {border-color:var(--ok);background:#f6fdf8;}
+    .sc-card.s-fixed    {border-color:var(--purple);background:#f5f0ff;}
+    .sc-top{display:flex;align-items:flex-start;justify-content:space-between;
+      gap:8px;margin-bottom:5px;}
+    .sc-name{font-size:.85rem;font-weight:700;}
+    .sc-desc{font-size:.78rem;color:var(--muted);line-height:1.45;margin-bottom:7px;}
+    .hint{font-size:.72rem;color:var(--muted);font-style:italic;margin-bottom:9px;
+      padding:5px 8px;background:#faf5f0;border-left:3px solid #ffc299;
+      border-radius:0 5px 5px 0;}
+    .sc-meta{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+    .ctag{font-family:monospace;font-size:.7rem;color:var(--muted);
+      background:#f0ece8;padding:1px 5px;border-radius:3px;}
+    .sc-cnt{position:absolute;top:10px;right:10px;background:var(--danger);
+      color:#fff;font-size:.65rem;font-weight:800;border-radius:50%;
+      width:20px;height:20px;display:none;align-items:center;justify-content:center;}
+    .sc-cnt.show{display:flex;}
+    .sc-actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px;}
+    .tbtn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:7px;
+      font-family:inherit;font-weight:700;font-size:.76rem;padding:6px 13px;cursor:pointer;
+      transition:opacity .15s,transform .1s;}
+    .tbtn:hover:not(:disabled){opacity:.85;transform:translateY(-1px);}
+    .tbtn:disabled{opacity:.45;cursor:default;transform:none;}
+    .tbtn-trigger{background:var(--danger);color:#fff;}
+    .tbtn-resolve{background:var(--ok);color:#fff;}
+    .tbtn-dash   {background:#0085c8;color:#fff;text-decoration:none;}
+    .sc-info{font-size:.72rem;color:var(--muted);padding:7px 9px;
+      background:#f5f2ef;border-radius:7px;line-height:1.6;display:none;}
+    .sc-info.show{display:block;}
+    .sc-info a{color:var(--accent);}
 
-    /* ── ServiceNow panel ────────────────────────────────────── */
-    #snow-panel {
-      width:100%; max-width:1120px;
-      border-radius:12px;
-      border:1px solid #1d4ed8;
-      background:#0d1a35;
-      padding:0;
-      margin-bottom:20px;
-      overflow:hidden;
-      display:none;
-    }
-    #snow-panel.visible { display:block; }
-    .snow-header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:12px 18px;
-      background:linear-gradient(90deg,#1d4ed8,#1e3a8a);
-    }
-    .snow-header-left { display:flex; align-items:center; gap:10px; }
-    .snow-logo { font-size:1.3rem; }
-    .snow-title { font-size:0.95rem; font-weight:700; color:#fff; }
-    .snow-subtitle { font-size:0.75rem; color:#93c5fd; }
-    .snow-body { padding:16px 18px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    @media(max-width:600px){ .snow-body{ grid-template-columns:1fr; } }
-    .snow-field label { font-size:0.72rem; color:#64748b; font-weight:600;
-                        text-transform:uppercase; letter-spacing:.06em; }
-    .snow-field .val  { font-size:0.88rem; color:#e2e8f0; margin-top:3px;
-                        font-family:monospace; }
-    .snow-field .val a { color:#60a5fa; text-decoration:none; }
-    .snow-field .val a:hover { text-decoration:underline; }
-    .snow-state-badge {
-      display:inline-block; padding:3px 10px; border-radius:99px;
-      font-size:0.78rem; font-weight:700;
-    }
-    .snow-state-badge.new       { background:#1e3a5f; color:#93c5fd; }
-    .snow-state-badge.progress  { background:#451a03; color:#fbbf24; }
-    .snow-state-badge.resolved  { background:#14532d; color:#4ade80; }
-    .snow-state-badge.closed    { background:#374151; color:#9ca3af; }
-    .snow-footer {
-      padding:10px 18px; border-top:1px solid #1e3a8a;
-      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    }
-    .snow-footer .note { font-size:0.77rem; color:#64748b; flex:1; }
-    #snowRefreshBtn {
-      background:none; border:1px solid #1d4ed8; color:#60a5fa;
-      border-radius:6px; padding:4px 10px; font-size:0.78rem; cursor:pointer;
-    }
-    #snowRefreshBtn:hover { background:#1e3a5f; }
-    #snowTimeline {
-      width:100%; max-width:1120px;
-      background:#0d1a35; border:1px solid #1e3a8a;
-      border-radius:12px; padding:14px 18px;
-      margin-bottom:20px; display:none;
-    }
-    #snowTimeline.visible { display:block; }
-    #snowTimeline h3 { font-size:0.78rem; color:#64748b; font-weight:700;
-                       text-transform:uppercase; margin-bottom:10px; }
-    .tl-step {
-      display:flex; align-items:flex-start; gap:10px;
-      padding:6px 0; border-bottom:1px solid #1e293b; font-size:0.83rem;
-    }
-    .tl-step:last-child { border-bottom:none; }
-    .tl-icon { font-size:1rem; min-width:20px; }
-    .tl-text { color:#cbd5e1; line-height:1.45; }
-    .tl-text.done    { color:#4ade80; }
-    .tl-text.active  { color:#fbbf24; }
-    .tl-text.waiting { color:#94a3b8; font-style:italic; }
+    /* ── Generator ──────────────────────────────────────────────────────────── */
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px;}
+    @media(max-width:680px){.grid2{grid-template-columns:1fr;}}
+    .frow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;}
+    .fg{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px;}
+    .fg label{font-size:.72rem;font-weight:600;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.04em;}
+    .fg input[type=number]{border:1px solid var(--line);border-radius:8px;
+      padding:8px 11px;font-size:.88rem;font-family:inherit;color:var(--ink);
+      background:#faf8f6;width:100%;}
+    .fg input[type=number]:focus{outline:none;border-color:var(--accent);}
+    .fg input[type=range]{width:100%;accent-color:var(--accent);}
+    .rval{font-size:.8rem;font-weight:700;color:var(--accent);}
+    .btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:9px;
+      font-family:inherit;font-weight:700;font-size:.85rem;padding:9px 18px;cursor:pointer;
+      transition:opacity .15s,transform .1s,box-shadow .15s;}
+    .btn:hover:not(:disabled){opacity:.88;transform:translateY(-1px);
+      box-shadow:0 4px 12px rgba(0,0,0,.15);}
+    .btn:disabled{opacity:.45;cursor:default;}
+    .btn-p{background:var(--accent);color:#fff;}
+    .btn-m{background:#eee;color:var(--ink);}
+    .btn-row{display:flex;gap:9px;flex-wrap:wrap;}
+    .burst-row{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+    .burst-lbl{font-size:.72rem;font-weight:600;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px;}
+    .result{display:none;margin-top:12px;padding:10px 14px;border-radius:9px;
+      font-size:.82rem;font-weight:600;}
+    .result.ok {background:#edf7f0;border:1px solid #b6dfc3;color:var(--ok); display:flex;}
+    .result.err{background:#fdf0f0;border:1px solid #f0bfbf;color:var(--danger);display:flex;}
 
-    /* ── Active errors ───────────────────────────────────────── */
-    #errors-list { list-style:none; }
-    #errors-list li {
-      display:flex; justify-content:space-between; align-items:center;
-      padding:9px 0; border-bottom:1px solid #2d3748; font-size:0.86rem;
-    }
-    #errors-list li:last-child { border-bottom:none; }
-    .err-type { font-family:monospace; color:#f87171; }
-    .err-time { color:#64748b; font-size:0.78rem; }
-    #empty-err { color:#475569; font-size:0.86rem; padding:10px 0; }
+    /* ── Log viewer ─────────────────────────────────────────────────────────── */
+    .log-box{background:#111;border-radius:10px;max-height:300px;overflow-y:auto;
+      font-family:monospace;font-size:.73rem;}
+    .log-toolbar{display:flex;align-items:center;justify-content:space-between;
+      padding:7px 12px;background:#1e1e1e;border-radius:10px 10px 0 0;
+      border-bottom:1px solid #333;}
+    .log-title{color:#aaa;font-size:.7rem;font-weight:600;letter-spacing:.04em;}
+    .log-refresh{background:none;border:1px solid #444;color:#aaa;border-radius:5px;
+      padding:3px 9px;font-size:.7rem;cursor:pointer;font-family:inherit;}
+    .log-refresh:hover{border-color:var(--accent);color:#fff;}
+    .log-lines{padding:10px 12px;}
+    .ll{line-height:1.7;white-space:pre-wrap;word-break:break-all;}
+    .ll.i{color:#7ec8a4;} .ll.e{color:#f28b82;} .ll.w{color:#fdd663;} .ll.r{color:#82cfff;}
+    .log-empty{color:#555;padding:18px 12px;font-size:.77rem;}
 
-    /* ── Log tail ────────────────────────────────────────────── */
-    #log-tail {
-      background:#0d1117; border-radius:8px; padding:12px;
-      font-family:monospace; font-size:0.77rem;
-      height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;
-    }
-    #log-tail .le { color:#a3e635; }
-    #log-tail .le-err { color:#f87171; }
-    #log-tail .le-res { color:#34d399; }
-
-    /* ── Remediation section ─────────────────────────────────── */
-    .remediation-steps {
-      display:flex; flex-direction:column; gap:10px;
-    }
-    .step-row {
-      display:flex; align-items:center; gap:12px;
-      padding:12px 14px; border-radius:10px;
-      background:#131a2e; border:1px solid #2d3748;
-      transition:border-color .2s;
-    }
-    .step-row.active  { border-color:#2563eb; }
-    .step-row.done    { border-color:#16a34a; }
-    .step-num {
-      width:28px; height:28px; border-radius:50%;
-      display:flex; align-items:center; justify-content:center;
-      font-size:0.82rem; font-weight:700; flex-shrink:0;
-      background:#2d3748; color:#94a3b8;
-    }
-    .step-row.active .step-num { background:#2563eb; color:#fff; }
-    .step-row.done .step-num   { background:#16a34a; color:#fff; }
-    .step-info { flex:1; }
-    .step-title { font-size:0.87rem; font-weight:600; color:#e2e8f0; }
-    .step-desc  { font-size:0.78rem; color:#64748b; margin-top:2px; }
-    .step-action { flex-shrink:0; }
-
-    /* ── Toast ───────────────────────────────────────────────── */
-    #toast {
-      position:fixed; bottom:24px; right:24px;
-      background:#1e293b; border:1px solid #334155;
-      border-radius:10px; padding:12px 18px;
-      font-size:0.85rem; max-width:320px;
-      opacity:0; transform:translateY(8px);
-      transition:opacity .25s,transform .25s; z-index:999;
-    }
-    #toast.show { opacity:1; transform:translateY(0); }
-    #toast.ok  { border-color:#16a34a; color:#4ade80; }
-    #toast.err { border-color:#dc2626; color:#f87171; }
+    /* ── Spinner / Toast ────────────────────────────────────────────────────── */
+    .spin{display:inline-block;width:12px;height:12px;
+      border:2px solid rgba(255,255,255,.3);border-top-color:#fff;
+      border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;}
+    @keyframes sp{to{transform:rotate(360deg);}}
+    #tc{position:fixed;bottom:22px;right:22px;display:flex;flex-direction:column;
+      gap:7px;z-index:999;}
+    .toast{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+      padding:11px 15px;font-size:.81rem;font-weight:500;max-width:300px;
+      box-shadow:0 4px 18px rgba(0,0,0,.14);animation:si .22s ease;}
+    .toast.ok {border-left:3px solid var(--ok);}
+    .toast.err{border-left:3px solid var(--danger);}
+    .toast.inf{border-left:3px solid var(--accent);}
+    @keyframes si{from{transform:translateX(22px);opacity:0;}}
   </style>
 </head>
 <body>
+<div class="wrap">
 
-<header>
-  <h1>🔒 Dummy Infra App</h1>
-  <p>SSL Certificate Demo — ServiceNow + AWS Bedrock Auto-Remediation</p>
-</header>
-
-<!-- SSL Status Banner -->
-<div id="ssl-banner" class="unknown">
-  <span class="banner-icon" id="bannerIcon">⏳</span>
-  <span id="bannerText">Loading SSL status…</span>
-</div>
-
-<!-- ServiceNow Ticket Panel (hidden until ticket created) -->
-<div id="snow-panel">
-  <div class="snow-header">
-    <div class="snow-header-left">
-      <span class="snow-logo">🎫</span>
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-row">
       <div>
-        <div class="snow-title">ServiceNow Incident</div>
-        <div class="snow-subtitle">Auto-created by AWS Bedrock Agent</div>
+        <span class="hero-icon">🚽</span>
+        <h1>Toilet Management — Dummy App</h1>
+        <p>Trigger named error scenarios — each one ships automatically to the dashboard and can be fixed via Bedrock AI.</p>
+        <div class="hero-badges">
+          <span class="hbadge">9000-series named errors</span>
+          <span class="hbadge">2000-series random</span>
+          <span class="hbadge">Auto-ship on trigger</span>
+          <span class="hbadge">Bedrock AI fix sync</span>
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="/dashboard" class="nav-link">📊 Dashboard</a>
+        <a href="/" class="nav-link">🏠 API Home</a>
       </div>
     </div>
-    <span id="snowHeaderBadge" class="snow-state-badge new">New</span>
   </div>
-  <div class="snow-body">
-    <div class="snow-field">
-      <label>Ticket Number</label>
-      <div class="val"><a id="snowTicketLink" href="#" target="_blank" rel="noopener" id="snowTicketNum">—</a></div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat total">
+      <div class="stat-lbl">Total Log Events</div>
+      <div class="stat-val" id="sTotal">{{ stats.total }}</div>
+      <div class="stat-sub">in application.log</div>
     </div>
-    <div class="snow-field">
-      <label>Priority</label>
-      <div class="val" id="snowPriority">1 - Critical</div>
+    <div class="stat errors">
+      <div class="stat-lbl">Error Events</div>
+      <div class="stat-val" id="sErrors">{{ stats.errors }}</div>
+      <div class="stat-sub">4xx / 5xx written</div>
     </div>
-    <div class="snow-field">
-      <label>Category</label>
-      <div class="val" id="snowCategory">Security</div>
+    <div class="stat active">
+      <div class="stat-lbl">Active Errors</div>
+      <div class="stat-val" id="sActive">0</div>
+      <div class="stat-sub">triggered, not fixed</div>
     </div>
-    <div class="snow-field">
-      <label>Assigned To</label>
-      <div class="val" id="snowAssigned">AWS Operations</div>
-    </div>
-    <div class="snow-field" style="grid-column:1/-1;">
-      <label>Description</label>
-      <div class="val" id="snowDesc" style="font-family:inherit;color:#94a3b8;">—</div>
+    <div class="stat fixed">
+      <div class="stat-lbl">Fixed by Bedrock</div>
+      <div class="stat-val" id="sFixed">0</div>
+      <div class="stat-sub">auto-remediated</div>
     </div>
   </div>
-  <div class="snow-footer">
-    <span class="note" id="snowNote">Polling status every 30s…</span>
-    <button id="snowRefreshBtn" onclick="pollSnowTicket()">↻ Refresh</button>
+
+  <!-- ── Triggered Errors Table ──────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="ico">📋</div>
+      <h2>Triggered Errors — live status</h2>
+      <button class="btn btn-m" style="font-size:.73rem;padding:5px 12px;margin-left:auto"
+              onclick="syncStates()">↺ Sync</button>
+    </div>
+    <div class="tbl-wrap">
+      <table class="etbl">
+        <thead>
+          <tr>
+            <th>Error Name</th>
+            <th>Code</th>
+            <th>HTTP</th>
+            <th>API Endpoint</th>
+            <th>Triggered At</th>
+            <th>Times</th>
+            <th>Status</th>
+            <th>ServiceNow</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="errTableBody">
+          <tr class="empty-row">
+            <td colspan="9">No errors triggered yet — use the scenario cards below to trigger an error.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
+
+  <!-- ── Named Error Scenarios ────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="ico">🔴</div>
+      <h2>Named Error Scenarios</h2>
+      <span style="font-size:.74rem;color:var(--muted);margin-left:auto">
+        Click Trigger → writes to log + ships to dashboard automatically
+      </span>
+    </div>
+    <div class="sc-grid">
+      {% for type, m in scenarios.items() %}
+      {% set st    = states.get(type, {}) %}
+      {% set state = st.get('state', 'idle') %}
+      {% set cnt   = st.get('trigger_count', 0) %}
+      {% set http  = m.http %}
+      {% set pill  = 'p5' if http >= 500 else ('p4' if http >= 400 else 'p2') %}
+      <div class="sc-card s-{{ state }}" id="sc-{{ type }}">
+
+        <!-- trigger count badge -->
+        <div class="sc-cnt {% if cnt > 0 %}show{% endif %}" id="cnt-{{ type }}">{{ cnt }}</div>
+
+        <!-- header row -->
+        <div class="sc-top">
+          <span class="sc-name">{{ m.label }}</span>
+          <span id="chip-{{ type }}"
+                class="chip chip-{{ state }}">{% if state == 'idle' %}⚪ Idle{% elif state == 'triggered' %}🔴 Triggered{% elif state == 'resolved' %}✅ Resolved{% elif state == 'fixed' %}🤖 Fixed{% endif %}</span>
+        </div>
+
+        <div class="sc-desc">{{ m.desc }}</div>
+        <div class="hint">🔧 {{ m.fix_hint }}</div>
+
+        <div class="sc-meta">
+          <span class="pill {{ pill }}">HTTP {{ http }}</span>
+          <span class="ctag">code {{ m.code }}</span>
+          <span class="ctag">{{ m.api }}</span>
+        </div>
+
+        <div class="sc-actions">
+          <button class="tbtn tbtn-trigger" id="tbtn-{{ type }}"
+                  onclick="triggerError('{{ type }}')">🔴 Trigger Error</button>
+          <button class="tbtn tbtn-resolve" id="rbtn-{{ type }}"
+                  onclick="triggerResolution('{{ type }}')"
+                  style="{{ '' if state == 'triggered' else 'display:none' }}">✅ Resolve</button>
+          <a href="/dashboard" class="tbtn tbtn-dash" target="_blank">📊 Dashboard</a>
+        </div>
+
+        <!-- status info block -->
+        <div class="sc-info {% if state != 'idle' %}show{% endif %}" id="info-{{ type }}">
+          {% if state == 'triggered' %}
+            🔴 Triggered {{ cnt }}x &nbsp;|&nbsp; Last: {{ st.get('triggered_at', '') }}<br>
+            Shipped to dashboard automatically.
+            <a href="/dashboard" target="_blank">View on dashboard →</a>
+          {% elif state == 'resolved' %}
+            ✅ Resolved at {{ st.get('resolved_at', '') }}
+          {% elif state == 'fixed' %}
+            🤖 Fixed by Bedrock at {{ st.get('fixed_at', '') }}
+            {% if st.get('snow_ticket') %}
+              &nbsp;— Ticket: <b>{{ st['snow_ticket'].get('number', '') }}</b>
+            {% endif %}
+          {% endif %}
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Random Generator + Log Viewer ─────────────────────────────────────── -->
+  <div class="grid2">
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-hdr"><div class="ico">⚡</div><h2>Random Event Generator</h2></div>
+      <div class="card-body">
+        <div class="frow">
+          <div class="fg">
+            <label>Event Count</label>
+            <input type="number" id="cntInput" value="50" min="1" max="500"/>
+          </div>
+          <div class="fg">
+            <label>Error Rate — <span class="rval" id="rrLabel">25%</span></label>
+            <input type="range" id="errRate" min="0" max="100" value="25"
+                   oninput="document.getElementById('rrLabel').textContent=this.value+'%'"/>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-p" id="genBtn" onclick="generateLogs()">⚡ Generate + Ship</button>
+          <button class="btn btn-m" onclick="refreshStats()">↺ Stats</button>
+        </div>
+        <div class="result" id="genResult"></div>
+        <div class="burst-row">
+          <div class="burst-lbl">Quick Burst</div>
+          <div class="btn-row">
+            <button class="btn btn-m" style="font-size:.74rem;padding:6px 11px"
+                    onclick="generateLogs(20,100)">💥 20 All-Error</button>
+            <button class="btn btn-m" style="font-size:.74rem;padding:6px 11px"
+                    onclick="generateLogs(50,25)">📊 50 Mixed</button>
+            <button class="btn btn-m" style="font-size:.74rem;padding:6px 11px"
+                    onclick="generateLogs(30,0)">✅ 30 Success</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-hdr"><div class="ico">📋</div><h2>Live Log Tail</h2></div>
+      <div class="log-box">
+        <div class="log-toolbar">
+          <span class="log-title">APPLICATION.LOG + SSL_EVENTS.LOG</span>
+          <button class="log-refresh" onclick="loadLogs()">↺ Refresh</button>
+        </div>
+        <div class="log-lines" id="logLines">
+          <div class="log-empty">No dummy_app lines yet. Trigger an error above.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
 </div>
-
-<!-- Remediation Timeline (hidden until flow starts) -->
-<div id="snowTimeline">
-  <h3>⚡ Remediation Timeline</h3>
-  <div id="tlSteps"></div>
-</div>
-
-<div class="grid">
-
-  <!-- SSL Certificate Details -->
-  <div class="card">
-    <h2>🔐 SSL Certificate</h2>
-    <table class="info-table">
-      <tr><td>Domain</td>    <td id="certDomain">—</td></tr>
-      <tr><td>Status</td>    <td id="certStatus"><span class="badge grey">unknown</span></td></tr>
-      <tr><td>Cert ARN</td>  <td id="certArn">—</td></tr>
-      <tr><td>Issued</td>    <td id="certIssued">—</td></tr>
-      <tr><td>Expires</td>   <td id="certExpires">—</td></tr>
-      <tr><td>Days Left</td> <td id="certDays">—</td></tr>
-    </table>
-  </div>
-
-  <!-- Remediation Steps Panel -->
-  <div class="card">
-    <h2>🤖 Auto-Remediation Flow</h2>
-    <div class="remediation-steps">
-
-      <!-- Step 1 -->
-      <div class="step-row" id="step1row">
-        <div class="step-num" id="step1num">1</div>
-        <div class="step-info">
-          <div class="step-title">Trigger SSL Error</div>
-          <div class="step-desc">Inject ssl_expired into log → ship to S3 → Lambda processes it</div>
-        </div>
-        <div class="step-action">
-          <button class="btn-red" id="btnTrigger" onclick="triggerSSL()">
-            🔴 Trigger SSL Expired
-          </button>
-        </div>
-      </div>
-
-      <!-- Step 2 -->
-      <div class="step-row" id="step2row">
-        <div class="step-num" id="step2num">2</div>
-        <div class="step-info">
-          <div class="step-title">Create ServiceNow Ticket</div>
-          <div class="step-desc">Bedrock Agent → servicenow_action_group → createIncident()</div>
-        </div>
-        <div class="step-action">
-          <button class="btn-snow" id="btnSnow" onclick="createSnowTicket()" disabled>
-            🎫 Create Ticket
-          </button>
-        </div>
-      </div>
-
-      <!-- Step 3 -->
-      <div class="step-row" id="step3row">
-        <div class="step-num" id="step3num">3</div>
-        <div class="step-info">
-          <div class="step-title">Fix SSL Issue</div>
-          <div class="step-desc">Bedrock Agent → ssl_remediation_action_group → remediateSSL()</div>
-        </div>
-        <div class="step-action">
-          <button class="btn-fix" id="btnFix" onclick="fixSSL()" disabled>
-            ⚡ Fix Issue
-          </button>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Active Errors -->
-  <div class="card">
-    <h2>🚨 Active Errors</h2>
-    <ul id="errors-list">
-      <li><span id="empty-err">No active errors — system healthy ✅</span></li>
-    </ul>
-  </div>
-
-  <!-- Service Health -->
-  <div class="card">
-    <h2>📊 Service Health</h2>
-    <table class="info-table">
-      <tr><td>App Status</td>    <td id="appStatus"><span class="badge grey">checking…</span></td></tr>
-      <tr><td>Error Count</td>   <td id="errCount">—</td></tr>
-      <tr><td>S3 Bucket</td>     <td id="s3Bucket">—</td></tr>
-      <tr><td>Last Ship</td>     <td id="lastShip">—</td></tr>
-    </table>
-    <div style="margin-top:14px;" class="btn-group">
-      <button class="btn-blue"  onclick="refreshAll()">🔄 Refresh</button>
-      <button class="btn-green" onclick="shipNow()">📤 Ship Logs Now</button>
-      <button class="btn-grey"  onclick="resetFlow()">↺ Reset Flow</button>
-    </div>
-  </div>
-
-  <!-- Other Error Types -->
-  <div class="card">
-    <h2>🛠 Other Error Types</h2>
-    <p style="color:#64748b;font-size:0.82rem;margin-bottom:12px;">
-      Trigger other errors to populate the Dashboard error table.
-    </p>
-    <div class="btn-group">
-      <button class="btn-yellow" onclick="triggerError('ssl_expiring')">SSL Expiring</button>
-      <button class="btn-grey"   onclick="triggerError('password_expired')">Password Expired</button>
-      <button class="btn-grey"   onclick="triggerError('db_storage')">DB Storage</button>
-      <button class="btn-grey"   onclick="triggerError('db_connection')">DB Connection</button>
-      <button class="btn-grey"   onclick="triggerError('compute_overload')">Compute Overload</button>
-    </div>
-  </div>
-
-  <!-- Log Tail -->
-  <div class="card" style="grid-column:1/-1;">
-    <h2>📜 Recent Logs</h2>
-    <div id="log-tail">Loading…</div>
-  </div>
-
-</div>
-
-<div id="toast"></div>
+<div id="tc"></div>
 
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let currentTicketNumber = '';
-let currentTicketUrl    = '';
-let snowPollTimer       = null;
-let flowStep            = 0;   // 0=idle, 1=triggered, 2=ticket_created, 3=fixed
+"use strict";
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function toast(msg, type = 'ok') {
-  const el = document.getElementById('toast');
+// ── Scenario metadata from Flask (safe: tojson escapes all braces) ────────────
+const SCENARIO_META = {{ scenarios | tojson }};
+
+// ── State label/class maps — defined as JS variables, NOT inside template literals
+//    so Jinja never sees {{ }} inside JS object literals
+const STATE_LABEL = {
+  idle:      '\u26AA Idle',
+  triggered: '\uD83D\uDD34 Triggered',
+  resolved:  '\u2705 Resolved',
+  fixed:     '\uD83E\uDD16 Fixed'
+};
+const STATE_CHIP = {
+  idle:      'chip chip-idle',
+  triggered: 'chip chip-triggered',
+  resolved:  'chip chip-resolved',
+  fixed:     'chip chip-fixed'
+};
+const STATE_CARD = {
+  idle:      'sc-card',
+  triggered: 'sc-card s-triggered',
+  resolved:  'sc-card s-resolved',
+  fixed:     'sc-card s-fixed'
+};
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, type, ms) {
+  ms = ms || 4200;
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type || 'inf');
   el.textContent = msg;
-  el.className = `show ${type}`;
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.className = '', 4000);
+  document.getElementById('tc').appendChild(el);
+  setTimeout(function() { el.remove(); }, ms);
 }
 
-// ── Flow step helpers ─────────────────────────────────────────────────────────
-function markStep(num, state) {
-  const row = document.getElementById(`step${num}row`);
-  const numEl = document.getElementById(`step${num}num`);
-  if (!row) return;
-  row.className = 'step-row ' + (state === 'done' ? 'done' : state === 'active' ? 'active' : '');
-  numEl.textContent = state === 'done' ? '✓' : num;
+// ── HTML escape ────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-function setBtn(id, enabled, text) {
-  const b = document.getElementById(id);
-  if (!b) return;
-  b.disabled = !enabled;
-  if (text) b.textContent = text;
+// ── HTTP pill class ────────────────────────────────────────────────────────────
+function pillClass(http) {
+  var h = parseInt(http, 10);
+  if (h >= 500) return 'p5';
+  if (h >= 400) return 'p4';
+  if (h === 200) return 'p2';
+  return 'pm';
 }
 
-function resetFlow() {
-  flowStep = 0;
-  currentTicketNumber = '';
-  currentTicketUrl    = '';
-  if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
-  document.getElementById('snow-panel').classList.remove('visible');
-  document.getElementById('snowTimeline').classList.remove('visible');
-  markStep(1, ''); markStep(2, ''); markStep(3, '');
-  setBtn('btnTrigger', true, '🔴 Trigger SSL Expired');
-  setBtn('btnSnow',   false, '🎫 Create Ticket');
-  setBtn('btnFix',    false, '⚡ Fix Issue');
-  refreshAll();
-}
-
-// ── Timeline ──────────────────────────────────────────────────────────────────
-const TL_STEPS = [
-  { icon: '🔴', text: 'SSL expired error injected into logs' },
-  { icon: '📤', text: 'Log file shipped to S3 raw-logs bucket' },
-  { icon: '⚙️',  text: 'Lambda processor converts log → unique_errors.json' },
-  { icon: '🎫', text: 'Bedrock Agent creates ServiceNow incident' },
-  { icon: '⚡', text: 'Bedrock Agent calls ssl_remediation_action_group → remediateSSL()' },
-  { icon: '🔑', text: 'SSL Lambda generates cert ARN (demo) / renews via ACM (real)' },
-  { icon: '💾', text: 'Cert ARN stored in Secrets Manager (dummy-app/ssl-cert-arn)' },
-  { icon: '📣', text: 'Dummy app notified → RESOLVED log line written' },
-  { icon: '✅', text: 'ServiceNow ticket updated with work note + Resolved status' },
-];
-
-function showTimeline(completedUpTo) {
-  const tl = document.getElementById('snowTimeline');
-  const steps = document.getElementById('tlSteps');
-  tl.classList.add('visible');
-  steps.innerHTML = TL_STEPS.map((s, i) => {
-    const cls = i < completedUpTo ? 'done' : i === completedUpTo ? 'active' : 'waiting';
-    return `<div class="tl-step">
-      <span class="tl-icon">${s.icon}</span>
-      <span class="tl-text ${cls}">${s.text}</span>
-    </div>`;
-  }).join('');
-}
-
-// ── SSL Banner ────────────────────────────────────────────────────────────────
-function updateBanner(state) {
-  const b   = document.getElementById('ssl-banner');
-  const ico = document.getElementById('bannerIcon');
-  const txt = document.getElementById('bannerText');
-  const MAP = {
-    ok:      { cls:'ok',      icon:'✅', msg:'SSL Certificate is VALID — all systems nominal' },
-    expired: { cls:'expired', icon:'🔴', msg:'SSL Certificate has EXPIRED — remediation required' },
-    warning: { cls:'warning', icon:'⚠️',  msg:'SSL Certificate is EXPIRING SOON — rotation recommended' },
-    unknown: { cls:'unknown', icon:'❓', msg:'SSL Certificate status unknown' },
-  };
-  const cfg = MAP[state] || MAP.unknown;
-  b.className = cfg.cls;
-  ico.textContent = cfg.icon;
-  txt.textContent = cfg.msg;
-}
-
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
-async function fetchStatus() {
-  try {
-    const d = await (await fetch('/api/dummy/status')).json();
-    document.getElementById('errCount').textContent = d.error_count ?? 0;
-    document.getElementById('appStatus').innerHTML = '<span class="badge green">healthy</span>';
-
-    const ssl = d.ssl_cert || {};
-    document.getElementById('certDomain').textContent  = ssl.domain || 'api.dummy-app.internal';
-    document.getElementById('certArn').textContent     = ssl.cert_arn ? '…' + ssl.cert_arn.slice(-28) : 'not provisioned';
-    document.getElementById('certIssued').textContent  = ssl.issued_at  ? new Date(ssl.issued_at).toLocaleString()  : '—';
-    document.getElementById('certExpires').textContent = ssl.expires_at ? new Date(ssl.expires_at).toLocaleString() : '—';
-    document.getElementById('certDays').textContent    = ssl.days_remaining ?? '—';
-
-    const active = (d.active_errors || []).filter(e => e.status === 'active');
-    const hasExp  = active.some(e => e.type === 'ssl_expired');
-    const hasWarn = active.some(e => e.type === 'ssl_expiring');
-
-    if (hasExp) {
-      updateBanner('expired');
-      document.getElementById('certStatus').innerHTML = '<span class="badge red">EXPIRED</span>';
-    } else if (hasWarn) {
-      updateBanner('warning');
-      document.getElementById('certStatus').innerHTML = '<span class="badge yellow">EXPIRING SOON</span>';
-    } else if (ssl.cert_arn) {
-      updateBanner('ok');
-      document.getElementById('certStatus').innerHTML = '<span class="badge green">VALID</span>';
-    } else {
-      updateBanner('unknown');
-      document.getElementById('certStatus').innerHTML = '<span class="badge grey">NOT SET</span>';
-    }
-
-    renderErrors(active);
-  } catch (e) {
-    document.getElementById('appStatus').innerHTML = '<span class="badge red">unreachable</span>';
+// ── Build ServiceNow cell HTML ─────────────────────────────────────────────────
+function snowCell(st) {
+  if (st.snow_ticket && st.snow_ticket.number) {
+    return '<span class="chip chip-fixed">' + esc(st.snow_ticket.number) + '</span>';
   }
+  return '<span style="color:var(--muted);font-size:.72rem">&mdash;</span>';
 }
 
-async function fetchHealth() {
-  try {
-    const d = await (await fetch('/health')).json();
-    document.getElementById('s3Bucket').textContent = d.raw_logs_bucket || '(not set)';
-    document.getElementById('lastShip').textContent = d.last_ship || 'never';
-  } catch (_) {}
+// ── Build status chip HTML ─────────────────────────────────────────────────────
+function chipHtml(state) {
+  var label = STATE_LABEL[state] || state;
+  var cls   = STATE_CHIP[state]  || 'chip chip-idle';
+  return '<span class="' + cls + '">' + esc(label) + '</span>';
 }
 
-async function fetchLogs() {
-  try {
-    const d = await (await fetch('/api/dummy/logs?lines=25')).json();
-    const tail = document.getElementById('log-tail');
-    tail.innerHTML = (d.lines || []).map(line => {
-      const cls = line.includes('[ERROR]') ? 'le-err' :
-                  line.includes('RESOLVED') ? 'le-res' : 'le';
-      return `<div class="${cls}">${line}</div>`;
-    }).join('');
-    tail.scrollTop = tail.scrollHeight;
-  } catch (e) {
-    document.getElementById('log-tail').textContent = 'Could not load logs: ' + e.message;
-  }
-}
+// ── Rebuild the triggered errors table ───────────────────────────────────────
+function rebuildTable(states) {
+  var tbody  = document.getElementById('errTableBody');
+  var active = [];
+  Object.keys(states).forEach(function(type) {
+    if (states[type].state !== 'idle') active.push(type);
+  });
 
-function renderErrors(active) {
-  const list = document.getElementById('errors-list');
   if (!active.length) {
-    list.innerHTML = '<li><span id="empty-err">No active errors — system healthy ✅</span></li>';
+    tbody.innerHTML =
+      '<tr class="empty-row"><td colspan="9">No errors triggered yet — use the scenario cards below.</td></tr>';
     return;
   }
-  list.innerHTML = active.map(e => `
-    <li>
-      <span class="err-type">${e.type}</span>
-      <span class="err-time">${e.triggered_at ? new Date(e.triggered_at).toLocaleTimeString() : ''}</span>
-      <span class="badge red">active</span>
-    </li>`).join('');
-}
 
-// ── ServiceNow panel ──────────────────────────────────────────────────────────
-function showSnowPanel(num, url, state, priority, category, desc) {
-  currentTicketNumber = num;
-  currentTicketUrl    = url;
-  const panel = document.getElementById('snow-panel');
-  panel.classList.add('visible');
-  document.getElementById('snowTicketLink').textContent = num;
-  document.getElementById('snowTicketLink').href = url || '#';
-  document.getElementById('snowPriority').textContent  = priority || '1 - Critical';
-  document.getElementById('snowCategory').textContent  = category || 'Security';
-  document.getElementById('snowDesc').textContent      = desc || '—';
-  updateSnowBadge(state || 'New');
-}
+  var rows = active.map(function(type) {
+    var st  = states[type];
+    var m   = SCENARIO_META[type] || {};
+    var http = m.http || '';
+    var pc   = pillClass(http);
+    var ts   = st.triggered_at
+      ? '<span class="c-ts">' + esc(st.triggered_at) + '</span>'
+      : '&mdash;';
+    var cnt  = st.trigger_count || 1;
 
-function updateSnowBadge(stateLabel) {
-  const badge = document.getElementById('snowHeaderBadge');
-  const s = stateLabel.toLowerCase();
-  badge.textContent = stateLabel;
-  badge.className = 'snow-state-badge ' +
-    (s.includes('progress') ? 'progress' :
-     s.includes('resolv') || s.includes('clos') ? 'resolved' : 'new');
-}
+    var actions =
+      '<button class="ra ra-trigger" onclick="triggerError(\'' + esc(type) + '\')">' +
+        '&#128308; Trigger</button> ';
 
-async function pollSnowTicket() {
-  if (!currentTicketNumber) return;
-  if (currentTicketNumber.startsWith('INC_DEMO') || currentTicketNumber === 'INC_STUB_001') {
-    document.getElementById('snowNote').textContent = 'Demo mode — no live ServiceNow polling.';
-    return;
-  }
-  try {
-    const d = await (await fetch('/api/snow-ticket/' + encodeURIComponent(currentTicketNumber))).json();
-    updateSnowBadge(d.state_label || 'New');
-    if (d.ticket_url) {
-      document.getElementById('snowTicketLink').href = d.ticket_url;
-      currentTicketUrl = d.ticket_url;
+    if (st.state === 'triggered') {
+      actions +=
+        '<button class="ra ra-resolve" onclick="triggerResolution(\'' + esc(type) + '\')">' +
+          '&#9989; Resolve</button> ';
     }
-    document.getElementById('snowNote').textContent =
-      `Last polled: ${new Date().toLocaleTimeString()}`;
-    if ((d.state_label || '').toLowerCase().includes('resolv')) {
-      if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
-      document.getElementById('snowNote').textContent = '✅ Ticket resolved — polling stopped.';
+    actions +=
+      '<a href="/dashboard" target="_blank" class="ra ra-dash">&#128202; Dashboard</a>';
+
+    return '<tr>' +
+      '<td class="c-name">' + esc(m.label || type) + '</td>' +
+      '<td class="c-code">' + esc(m.code  || '')   + '</td>' +
+      '<td><span class="pill ' + pc + '">HTTP ' + esc(String(http)) + '</span></td>' +
+      '<td class="c-api" title="' + esc(m.api || '') + '">' + esc(m.api || '') + '</td>' +
+      '<td>' + ts + '</td>' +
+      '<td style="text-align:center;font-weight:700">' + cnt + '</td>' +
+      '<td>' + chipHtml(st.state) + '</td>' +
+      '<td>' + snowCell(st) + '</td>' +
+      '<td><div style="display:flex;gap:5px;flex-wrap:wrap">' + actions + '</div></td>' +
+      '</tr>';
+  });
+
+  tbody.innerHTML = rows.join('');
+}
+
+// ── Apply state to a scenario card ───────────────────────────────────────────
+function applyStateToCard(type, st) {
+  var card  = document.getElementById('sc-' + type);
+  var chip  = document.getElementById('chip-' + type);
+  var rbtn  = document.getElementById('rbtn-' + type);
+  var info  = document.getElementById('info-' + type);
+  var cntEl = document.getElementById('cnt-' + type);
+  if (!card) return;
+
+  var state = st.state || 'idle';
+
+  card.className = STATE_CARD[state] || 'sc-card';
+
+  if (chip) {
+    chip.textContent = STATE_LABEL[state] || state;
+    chip.className   = STATE_CHIP[state]  || 'chip chip-idle';
+  }
+
+  if (rbtn) {
+    rbtn.style.display = state === 'triggered' ? 'inline-flex' : 'none';
+  }
+
+  var cnt = st.trigger_count || 0;
+  if (cntEl) {
+    cntEl.textContent = cnt;
+    cntEl.className   = cnt > 0 ? 'sc-cnt show' : 'sc-cnt';
+  }
+
+  if (info) {
+    if (state === 'idle') {
+      info.className = 'sc-info';
+      info.innerHTML = '';
+    } else if (state === 'triggered') {
+      info.className = 'sc-info show';
+      info.innerHTML =
+        '<b style="color:var(--danger)">&#128308; Triggered ' + cnt + 'x</b>' +
+        ' &nbsp;|&nbsp; Last: ' + esc(st.triggered_at || '') +
+        '<br>Shipped to dashboard automatically. ' +
+        '<a href="/dashboard" target="_blank">View on dashboard &#8594;</a>';
+    } else if (state === 'resolved') {
+      info.className = 'sc-info show';
+      info.innerHTML =
+        '<b style="color:var(--ok)">&#9989; Resolved</b> at ' +
+        esc(st.resolved_at || '');
+    } else if (state === 'fixed') {
+      var ticketLine = '';
+      if (st.snow_ticket && st.snow_ticket.number) {
+        ticketLine = ' &mdash; Ticket: <b>' + esc(st.snow_ticket.number) + '</b>';
+      }
+      info.className = 'sc-info show';
+      info.innerHTML =
+        '<b style="color:var(--purple)">&#129302; Fixed by Bedrock</b> at ' +
+        esc(st.fixed_at || '') + ticketLine +
+        '<br>Check ServiceNow for full remediation notes.';
     }
-  } catch (_) {}
-}
-
-function startSnowPolling() {
-  if (snowPollTimer) clearInterval(snowPollTimer);
-  let ticks = 0;
-  snowPollTimer = setInterval(() => {
-    ticks++;
-    pollSnowTicket();
-    if (ticks >= 20) clearInterval(snowPollTimer);
-  }, 30000);
-}
-
-// ── STEP 1: Trigger SSL error ─────────────────────────────────────────────────
-async function triggerSSL() {
-  setBtn('btnTrigger', false, '⏳ Triggering…');
-  markStep(1, 'active');
-  showTimeline(0);
-  try {
-    const r = await fetch('/api/dummy/trigger-error', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error_type: 'ssl_expired' }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
-
-    toast('✅ ssl_expired triggered. Log shipped to S3.', 'ok');
-    markStep(1, 'done');
-    markStep(2, 'active');
-    setBtn('btnTrigger', false, '✓ Triggered');
-    setBtn('btnSnow',    true,  '🎫 Create Ticket');
-    flowStep = 1;
-    showTimeline(2);
-    await refreshAll();
-  } catch (e) {
-    toast('❌ Trigger failed: ' + e.message, 'err');
-    markStep(1, '');
-    setBtn('btnTrigger', true, '🔴 Trigger SSL Expired');
   }
 }
 
-// ── STEP 2: Create ServiceNow ticket ─────────────────────────────────────────
-async function createSnowTicket() {
-  setBtn('btnSnow', false, '⏳ Creating ticket…');
-  markStep(2, 'active');
-  showTimeline(3);
+// ── Sync all scenario states from server ─────────────────────────────────────
+async function syncStates() {
   try {
-    const r = await fetch('/api/create-snow-ticket', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: {
-          'Error Code':   '9010',
-          'Status Code':  '495',
-          'Description':  'SSL certificate expired for domain api.dummy-app.internal',
-          'API':          'GET /api/dummy/status',
-          'Count':        '1',
-          'Last Seen':    new Date().toISOString(),
-        }
-      }),
+    var r = await fetch('/api/dummy-app/scenario-states');
+    if (!r.ok) return;
+    var data   = await r.json();
+    var states = data.states || {};
+
+    var active = 0, fixed = 0;
+    Object.keys(states).forEach(function(type) {
+      var st = states[type];
+      applyStateToCard(type, st);
+      if (st.state === 'triggered') active++;
+      if (st.state === 'fixed')     fixed++;
     });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
 
-    const num = d.ticket_number || 'INC_DEMO_001';
-    const url = d.ticket_url    || '#';
+    document.getElementById('sActive').textContent = active;
+    document.getElementById('sFixed').textContent  = fixed;
 
-    showSnowPanel(
-      num, url, 'New',
-      '1 - Critical', 'Security',
-      'SSL certificate expired for domain api.dummy-app.internal — auto-detected by AWS Log Aggregator'
-    );
-    startSnowPolling();
-
-    toast(`✅ ServiceNow ticket created: ${num}`, 'ok');
-    markStep(2, 'done');
-    markStep(3, 'active');
-    setBtn('btnSnow', false, '✓ ' + num);
-    setBtn('btnFix',  true,  '⚡ Fix Issue');
-    flowStep = 2;
-    showTimeline(4);
-  } catch (e) {
-    toast('❌ Ticket creation failed: ' + e.message, 'err');
-    markStep(2, 'active');
-    setBtn('btnSnow', true, '🎫 Create Ticket');
-  }
+    rebuildTable(states);
+  } catch(e) { /* silent */ }
 }
 
-// ── STEP 3: Fix SSL issue ─────────────────────────────────────────────────────
-async function fixSSL() {
-  setBtn('btnFix', false, '⏳ Fixing…');
-  markStep(3, 'active');
-  showTimeline(5);
-  try {
-    const r = await fetch('/api/fix-error', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: {
-          'Error Code':  '9010',
-          'Status Code': '495',
-          'Description': 'SSL certificate expired for domain api.dummy-app.internal',
-          'API':         'GET /api/dummy/status',
-          'Count':       '1',
-          'Last Seen':   new Date().toISOString(),
-        },
-        ticket_number: currentTicketNumber,
-        session_id:    '',
-        history:       [],
-      }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
-
-    // Ticket resolved
-    updateSnowBadge('Resolved');
-    document.getElementById('snowNote').textContent = '✅ Ticket resolved by auto-remediation.';
-    if (snowPollTimer) { clearInterval(snowPollTimer); snowPollTimer = null; }
-
-    markStep(3, 'done');
-    setBtn('btnFix', false, '✓ Fixed');
-    flowStep = 3;
-    showTimeline(TL_STEPS.length);
-    toast('✅ SSL issue fixed! Ticket resolved.', 'ok');
-    await refreshAll();
-  } catch (e) {
-    toast('❌ Fix failed: ' + e.message, 'err');
-    markStep(3, 'active');
-    setBtn('btnFix', true, '⚡ Fix Issue');
-  }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Trigger named error ───────────────────────────────────────────────────────
 async function triggerError(type) {
-  toast(`Triggering ${type}…`);
+  var btn = document.getElementById('tbtn-' + type);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Triggering\u2026'; }
+
   try {
-    const r = await fetch('/api/dummy/trigger-error', {
-      method: 'POST',
+    var r = await fetch('/api/dummy-app/trigger-error', {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error_type: type }),
+      body:    JSON.stringify({ error_type: type }),
     });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error);
-    toast(`✅ ${type} triggered`, 'ok');
-    await refreshAll();
-  } catch (e) { toast('❌ ' + e.message, 'err'); }
+    var d = await r.json();
+    if (!r.ok) { toast('\u274C ' + (d.error || 'Failed'), 'err'); return; }
+
+    toast('\uD83D\uDD34 ' + type + ' triggered (HTTP ' + d.http_status +
+          ', code ' + d.error_code + ') \u2014 shipped to dashboard', 'err');
+
+    await Promise.all([ syncStates(), refreshStats(), loadLogs() ]);
+
+  } catch(e) {
+    toast('\u274C ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '\uD83D\uDD34 Trigger Error'; }
+  }
 }
 
-async function shipNow() {
-  toast('Shipping logs to S3…');
+// ── Trigger resolution ────────────────────────────────────────────────────────
+async function triggerResolution(type) {
+  var btn = document.getElementById('rbtn-' + type);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+
   try {
-    const r = await fetch('/api/dummy/ship-now', { method: 'POST' });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error);
-    toast('✅ Shipped: ' + (d.s3_key || ''), 'ok');
-    await fetchHealth();
-  } catch (e) { toast('❌ ' + e.message, 'err'); }
+    var r = await fetch('/api/dummy-app/trigger-resolution', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ error_type: type }),
+    });
+    var d = await r.json();
+    if (!r.ok) { toast('\u274C ' + (d.error || 'Failed'), 'err'); return; }
+    toast('\u2705 ' + type + ' resolved', 'ok');
+    await Promise.all([ syncStates(), loadLogs() ]);
+  } catch(e) {
+    toast('\u274C ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '\u2705 Resolve'; }
+  }
 }
 
-async function refreshAll() {
-  await Promise.all([fetchStatus(), fetchHealth(), fetchLogs()]);
+// ── Generate random logs ──────────────────────────────────────────────────────
+async function generateLogs(count, errorPct) {
+  var btn = document.getElementById('genBtn');
+  var res = document.getElementById('genResult');
+  var c   = (count    !== undefined) ? count    : (parseInt(document.getElementById('cntInput').value, 10) || 50);
+  var e   = (errorPct !== undefined) ? errorPct : parseInt(document.getElementById('errRate').value, 10);
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Generating\u2026';
+  res.className = 'result';
+
+  try {
+    var r = await fetch('/api/dummy-app/generate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ count: c, error_pct: e }),
+    });
+    var d = await r.json();
+    if (!r.ok) {
+      res.className   = 'result err';
+      res.textContent = '\u274C ' + (d.error || 'Failed');
+    } else {
+      var g = d.generated;
+      res.className   = 'result ok';
+      res.textContent = '\u2714 ' + g.total + ' events \u2014 ' +
+                        g.errors + ' errors, ' + g.successes +
+                        ' successes. Shipped to dashboard.';
+      toast('\u2714 ' + g.total + ' events written + shipped', 'ok');
+      await Promise.all([ refreshStats(), loadLogs() ]);
+    }
+  } catch(err) {
+    res.className   = 'result err';
+    res.textContent = '\u274C ' + err.message;
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = '\u26A1 Generate + Ship';
+  }
+}
+
+// ── Refresh log stats ─────────────────────────────────────────────────────────
+async function refreshStats() {
+  try {
+    var r = await fetch('/api/dummy-app/stats');
+    if (!r.ok) return;
+    var d = await r.json();
+    document.getElementById('sTotal').textContent  = d.total;
+    document.getElementById('sErrors').textContent = d.errors;
+  } catch(e) { /* silent */ }
+}
+
+// ── Load log tail ─────────────────────────────────────────────────────────────
+async function loadLogs() {
+  var c = document.getElementById('logLines');
+  try {
+    var r = await fetch('/api/dummy-app/logs?n=100');
+    if (!r.ok) return;
+    var data = await r.json();
+    if (!data.lines || !data.lines.length) {
+      c.innerHTML = '<div class="log-empty">No dummy_app lines yet.</div>';
+      return;
+    }
+    c.innerHTML = data.lines.map(function(line) {
+      var cls = 'll i';
+      if (line.indexOf('[ERROR]')   > -1) cls = 'll e';
+      else if (line.indexOf('WARN') > -1) cls = 'll w';
+      else if (line.indexOf('RESOLVED') > -1 || line.indexOf('Fixed') > -1) cls = 'll r';
+      return '<div class="' + cls + '">' + esc(line) + '</div>';
+    }).join('');
+    c.closest('.log-box').scrollTop = 0;
+  } catch(e) { /* silent */ }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-refreshAll();
-setInterval(refreshAll, 15000);
+syncStates();
+loadLogs();
+// Poll every 10s to pick up Bedrock fix status from dashboard
+setInterval(syncStates,   10000);
+setInterval(refreshStats, 30000);
 </script>
 </body>
 </html>
