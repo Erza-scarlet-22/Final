@@ -1,439 +1,434 @@
-# dummy-infra-app/app.py
+# DummyApp/dummy_app_blueprint.py
 #
-# CHANGES vs your version:
+# Flask blueprint for the Toil Management dummy application.
 #
-#  1. Valid error types come from ErrorSimulator.VALID_TYPES — no duplicate list.
-#
-#  2. Local directory layout is clearer.  When you run `python app.py` locally
-#     the logs directory is created at:
-#       <project>/dummy-infra-app/logs/
-#         ├── app.log          — Flask request/response noise (health checks etc.)
-#         ├── ssl_events.log   — ONLY triggered errors + resolutions (shipped to S3)
-#         └── application.log  — Mirror copy of ssl_events.log (updated on every ship)
-#                                This is the file that goes to S3 as
-#                                raw-logs/application.log exactly.
-#
-#  3. The /api/dummy/debug endpoint also shows the local application.log path
-#     so you can verify both files side-by-side.
-#
-#  4. The /api/dummy/logs endpoint now has a ?file= param:
-#       ?file=events       → ssl_events.log  (default, what ships to S3)
-#       ?file=application  → application.log (the S3 mirror copy)
-#       ?file=app          → app.log         (Flask request noise)
-#     This lets you verify each log independently without touching the container.
-#
-#  Everything else is identical to your version — all routes, state management,
-#  background ship loop, and SSL cert tracking are unchanged.
+# Routes:
+#   GET  /dummy-app                         — HTML control panel
+#   POST /api/dummy-app/trigger-error       — Trigger a named error + auto-ship
+#   POST /api/dummy-app/trigger-resolution  — Mark a named error resolved
+#   POST /api/dummy-app/generate            — Write N random events
+#   POST /api/dummy-app/ship                — Force conversion immediately
+#   GET  /api/dummy-app/logs                — Last N relevant log lines
+#   GET  /api/dummy-app/stats               — Error/success counts
+#   GET  /api/dummy-app/scenario-states     — Current state of all named scenarios
+#   POST /api/dummy-app/mark-fixed          — Called by dashboard fix pipeline to sync fix status
 
 import logging
 import os
+import random
 import threading
-import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+from typing import Dict
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, render_template, request
 
-from error_simulator import ErrorSimulator
-from log_shipper import LogShipper
+_log = logging.getLogger(__name__)
 
+SOURCE_TAG = 'dummy_app'
 
-# ══════════════════════════════════════════════════════════════════════════════
-# LOG DIRECTORY — two log files + one mirror copy
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _resolve_log_dir() -> str:
-    """
-    Resolve the log directory:
-
-      1. LOG_DIR env var — explicitly set (ECS task definition uses this)
-      2. /app/Dummy-infra-app/logs — ONLY on Linux inside a real container
-      3. <script_dir>/logs — always used for local dev on Windows/Mac
-
-    Why not use the container path on Windows:
-      os.makedirs('/app/...') succeeds on Windows (creates C:\\app\\...)
-      and the probe write also passes, so the wrong path would be returned.
-      Gating on sys.platform prevents that entirely.
-    """
-    import sys
-
-    # Priority 1: explicit override (ECS sets LOG_DIR)
-    env_dir = os.getenv("LOG_DIR", "")
-    if env_dir:
-        os.makedirs(env_dir, exist_ok=True)
-        return env_dir
-
-    # Priority 2: real Linux container path — skipped on Windows/macOS
-    if sys.platform == "linux":
-        container_path = "/app/Dummy-infra-app/logs"
-        try:
-            os.makedirs(container_path, exist_ok=True)
-            probe = os.path.join(container_path, ".probe")
-            with open(probe, "w") as f:
-                f.write("ok")
-            os.remove(probe)
-            return container_path
-        except (OSError, PermissionError):
-            pass
-
-    # Priority 3: local dev fallback — always works on Windows/macOS/Linux
-    # Creates dummy-infra-app/logs/ next to this script file.
-    # On Windows: C:\Users\10822051\Downloads\log-aggregator\dummy-infra-app\logs\
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-    os.makedirs(local_path, exist_ok=True)
-    return local_path
-
-
-LOG_DIR = _resolve_log_dir()
-
-# ── File paths ────────────────────────────────────────────────────────────────
-APP_LOG_FILE    = os.path.join(LOG_DIR, "app.log")          # Flask request noise
-EVENTS_LOG_FILE = os.path.join(LOG_DIR, "ssl_events.log")   # Events shipped to S3
-APP_MIRROR_FILE = os.path.join(LOG_DIR, "application.log")  # Mirror of what's in S3
-
-# ── Application logger (writes to app.log + stdout) ───────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%dT%H:%M:%S",
-    handlers=[
-        logging.FileHandler(APP_LOG_FILE),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger("dummy-infra-app")
-
-# Suppress werkzeug health-check spam from app.log
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-logger.info("Log directory   : %s", LOG_DIR)
-logger.info("app.log         : %s  (Flask request noise — NOT shipped)", APP_LOG_FILE)
-logger.info("ssl_events.log  : %s  (errors + resolutions — shipped to S3)", EVENTS_LOG_FILE)
-logger.info("application.log : %s  (mirror of S3 upload — verify locally)", APP_MIRROR_FILE)
-logger.info("RAW_LOGS_BUCKET : %s", os.getenv("RAW_LOGS_BUCKET", "(not set — local dev)"))
-
-# ── Flask app ─────────────────────────────────────────────────────────────────
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
-
-# ── Simulator and shipper ─────────────────────────────────────────────────────
-simulator = ErrorSimulator(logger, EVENTS_LOG_FILE)
-shipper   = LogShipper(logger, EVENTS_LOG_FILE)
-
-# ── Shared state ──────────────────────────────────────────────────────────────
-_active_errors: dict = {}
-_state_lock = threading.Lock()
-
-_ssl_cert = {
-    "domain":         "api.dummy-app.internal",
-    "cert_arn":       None,
-    "status":         "valid",
-    "issued_at":      (datetime.now(timezone.utc) - timedelta(days=60)).isoformat(),
-    "expires_at":     (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
-    "days_remaining": 30,
+# ── Named scenario metadata (mirrors ErrorSimulator.ERROR_DEFINITIONS) ─────────
+NAMED_SCENARIOS: Dict[str, dict] = {
+    'ssl_expired': {
+        'label':    'SSL Certificate Expired',
+        'desc':     'SSL certificate expired for domain api.dummy-app.internal',
+        'http':     495,
+        'code':     9010,
+        'api':      'GET /api/dummy/status',
+        'severity': 'high',
+        'fix_hint': 'Renew certificate via ACM and update ALB listener',
+    },
+    'ssl_expiring': {
+        'label':    'SSL Certificate Expiring Soon (7 days)',
+        'desc':     'SSL certificate expires in 7 days — proactive renewal required',
+        'http':     495,
+        'code':     9011,
+        'api':      'GET /api/dummy/status',
+        'severity': 'medium',
+        'fix_hint': 'Rotate certificate proactively via ACM before it expires',
+    },
+    'password_expired': {
+        'label':    'Service Account Password Expired',
+        'desc':     'Service account password expired, authentication failed',
+        'http':     401,
+        'code':     9012,
+        'api':      'POST /api/dummy/auth',
+        'severity': 'high',
+        'fix_hint': 'Rotate password in Secrets Manager and restart ECS task',
+    },
+    'db_storage': {
+        'label':    'DB Storage Critical (92%)',
+        'desc':     'Database storage at 92% capacity, writes may fail',
+        'http':     507,
+        'code':     9013,
+        'api':      'POST /api/dummy/db-write',
+        'severity': 'high',
+        'fix_hint': 'Increase RDS allocated storage and enable autoscaling',
+    },
+    'db_connection': {
+        'label':    'DB Connection Pool Exhausted',
+        'desc':     'RDS connection pool exhausted, timeout after 30s',
+        'http':     504,
+        'code':     9014,
+        'api':      'GET /api/dummy/db-read',
+        'severity': 'critical',
+        'fix_hint': 'Kill stale connections, redeploy ECS task, upgrade RDS instance',
+    },
+    'compute_overload': {
+        'label':    'Compute Overload (CPU 95%)',
+        'desc':     'CPU at 95%, memory at 88%, dropping requests',
+        'http':     503,
+        'code':     9015,
+        'api':      'POST /api/dummy/process',
+        'severity': 'critical',
+        'fix_hint': 'Scale out ECS desired count and update autoscaling policy',
+    },
 }
 
-# ── Background ship loop — only fires if new events exist ─────────────────────
-def _background_ship_loop():
-    while True:
-        time.sleep(60)
-        if shipper.has_new_events():
-            logger.info("Background ship: new events detected")
-            shipper.ship()
-        else:
-            logger.debug("Background ship: no new events, skipping")
+# ── 2000-series random scenarios ───────────────────────────────────────────────
+_ERROR_SCENARIOS = [
+    (503, 2001, 'Toilet sensor gateway did not respond within SLA threshold',      'GET /api/dummy_app/sensors'),
+    (500, 2002, 'Database connection pool exhausted — all connections in use',      'POST /api/dummy_app/flush'),
+    (404, 2003, 'Toilet unit not found in registry',                                'GET /api/dummy_app/unit/{id}'),
+    (422, 2004, 'Maintenance schedule payload missing required field: unit_id',     'POST /api/dummy_app/maintenance'),
+    (401, 2005, 'Authentication token expired for maintenance crew dashboard',      'POST /api/dummy_app/auth'),
+    (409, 2006, 'Flush command rejected — unit TLT-009 is already in flush cycle',  'POST /api/dummy_app/flush'),
+    (502, 2007, 'Received malformed response from downstream sensor aggregator',    'GET /api/dummy_app/sensors'),
+    (504, 2008, 'Upstream alert engine timed out after 3000 ms',                   'GET /api/dummy_app/alerts'),
+    (429, 2009, 'Rate limit exceeded for sensor heartbeat endpoint',               'POST /api/dummy_app/heartbeat'),
+    (500, 2010, 'NullPointerException in pressure reading parser',                  'GET /api/dummy_app/sensors'),
+]
 
+_SUCCESS_SCENARIOS = [
+    (200, 'GET /api/dummy_app/status'),
+    (200, 'GET /api/dummy_app/sensors'),
+    (201, 'POST /api/dummy_app/maintenance'),
+    (200, 'GET /api/dummy_app/alerts'),
+    (200, 'POST /api/dummy_app/heartbeat'),
+    (200, 'GET /api/dummy_app/unit/{id}'),
+]
 
-threading.Thread(target=_background_ship_loop, daemon=True).start()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ROUTES
-# ══════════════════════════════════════════════════════════════════════════════
-
-@app.route("/", methods=["GET"])
-@app.route("/dummy", methods=["GET"])
-@app.route("/dummy/", methods=["GET"])
-def index_page():
-    return send_from_directory(STATIC_DIR, "index.html")
-
-
-@app.route("/dummy/static/<path:filename>", methods=["GET"])
-def dummy_static(filename):
-    return send_from_directory(STATIC_DIR, filename)
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    """ALB health check — intentionally minimal, no logging."""
-    return jsonify({"status": "healthy", "service": "dummy-infra-app"}), 200
-
-
-@app.route("/api/dummy/status", methods=["GET"])
-def api_status():
-    with _state_lock:
-        return jsonify({
-            "active_errors": list(_active_errors.values()),
-            "error_count":   len(_active_errors),
-            "ssl_cert":      dict(_ssl_cert),
-            "timestamp":     _now(),
-        }), 200
-
-
-@app.route("/api/dummy/errors", methods=["GET"])
-def list_errors():
-    with _state_lock:
-        return jsonify({"errors": list(_active_errors.values())}), 200
-
-
-@app.route("/api/dummy/ssl-cert", methods=["GET"])
-def get_ssl_cert():
-    with _state_lock:
-        return jsonify(dict(_ssl_cert)), 200
-
-
-# ── Trigger ───────────────────────────────────────────────────────────────────
-
-@app.route("/api/dummy/trigger-error", methods=["POST"])
-def trigger_error():
-    """
-    Write a 3-line error cycle to ssl_events.log and ship immediately to S3.
-    Body: {"error_type": "ssl_expired"}
-    """
-    body       = request.get_json(silent=True) or {}
-    error_type = body.get("error_type", "").strip()
-
-    if not error_type or error_type not in simulator.VALID_TYPES:
-        return jsonify({
-            "error":       f"Invalid or missing error_type.",
-            "valid_types": simulator.VALID_TYPES,
-        }), 400
-
-    logger.info("Trigger: %s", error_type)
-
-    try:
-        log_entry = simulator.generate_error(error_type)
-    except Exception as exc:
-        logger.error("generate_error failed: %s", exc)
-        return jsonify({
-            "error":      f"Log write failed: {exc}",
-            "events_log": EVENTS_LOG_FILE,
-        }), 500
-
-    with _state_lock:
-        _active_errors[error_type] = {
-            "type":         error_type,
-            "triggered_at": _now(),
-            "status":       "active",
-            "log_entry":    log_entry,
-        }
-        if error_type == "ssl_expired":
-            _ssl_cert["status"]         = "expired"
-            _ssl_cert["days_remaining"] = 0
-            _ssl_cert["expires_at"]     = (
-                datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        elif error_type == "ssl_expiring":
-            _ssl_cert["status"]         = "expiring"
-            _ssl_cert["days_remaining"] = 7
-            _ssl_cert["expires_at"]     = (
-                datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
-
-    ship_ok = shipper.ship()
-    logger.info("Ship result: ok=%s key=%s", ship_ok, shipper.last_s3_key)
-
-    return jsonify({
-        "triggered":        error_type,
-        "log_entry":        log_entry,
-        "shipped":          ship_ok,
-        "shipped_to":       shipper.last_s3_key or "(local only — RAW_LOGS_BUCKET not set)",
-        # Local paths — open these to verify without needing S3 access
-        "local_events_log":      EVENTS_LOG_FILE,
-        "local_application_log": APP_MIRROR_FILE,
-        "local_app_log":         APP_LOG_FILE,
-    }), 200
-
-
-# ── Resolve ───────────────────────────────────────────────────────────────────
-
-@app.route("/api/dummy/resolve/<error_type>", methods=["POST"])
-def resolve_error(error_type):
-    """Called by Bedrock action group Lambdas after they fix an error."""
-    body    = request.get_json(silent=True) or {}
-    details = body.get("details", {})
-
-    resolution_msg = simulator.generate_resolution(error_type, details)
-
-    with _state_lock:
-        if error_type in _active_errors:
-            _active_errors[error_type]["status"]      = "resolved"
-            _active_errors[error_type]["resolved_at"] = _now()
-            _active_errors[error_type]["details"]     = details
-
-        if error_type in ("ssl_expired", "ssl_expiring"):
-            new_arn = details.get("cert_arn", "")
-            if new_arn:
-                _ssl_cert["cert_arn"] = new_arn
-            _ssl_cert["status"]         = "valid"
-            _ssl_cert["issued_at"]      = _now()
-            _ssl_cert["expires_at"]     = (
-                datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
-            _ssl_cert["days_remaining"] = 90
-
-    ship_ok = shipper.ship()
-
-    return jsonify({
-        "resolved":              error_type,
-        "log_entry":             resolution_msg,
-        "shipped":               ship_ok,
-        "shipped_to":            shipper.last_s3_key or "(local only)",
-        "local_events_log":      EVENTS_LOG_FILE,
-        "local_application_log": APP_MIRROR_FILE,
-    }), 200
-
-
-# ── Log tail — supports ?file= param for all 3 log files ─────────────────────
-
-@app.route("/api/dummy/logs", methods=["GET"])
-def get_logs():
-    """
-    Returns the last N lines of a log file.
-
-    Query params:
-      ?lines=30                (default 30, max 200)
-      ?file=events             ssl_events.log  — errors + resolutions (default)
-      ?file=application        application.log — S3 mirror copy
-      ?file=app                app.log         — Flask request noise
-
-    This lets you verify each log independently from the browser or curl:
-      curl http://localhost:5001/api/dummy/logs?file=events
-      curl http://localhost:5001/api/dummy/logs?file=application
-      curl http://localhost:5001/api/dummy/logs?file=app
-    """
-    file_param = request.args.get("file", "events").lower()
-    file_map = {
-        "events":      EVENTS_LOG_FILE,
-        "application": APP_MIRROR_FILE,
-        "app":         APP_LOG_FILE,
+# ── Server-side scenario state store ──────────────────────────────────────────
+# Persists across requests for the lifetime of the Flask process.
+# state: 'idle' | 'triggered' | 'resolved' | 'fixed'
+_scenario_states: Dict[str, dict] = {
+    t: {
+        'state':          'idle',
+        'triggered_at':   None,
+        'resolved_at':    None,
+        'fixed_at':       None,
+        'trigger_count':  0,
+        'http_status':    m['http'],
+        'error_code':     m['code'],
+        'snow_ticket':    None,   # filled by mark-fixed
     }
+    for t, m in NAMED_SCENARIOS.items()
+}
 
-    if file_param not in file_map:
-        return jsonify({
-            "error": f"Unknown file param '{file_param}'. Valid: {list(file_map.keys())}"
-        }), 400
+_state_lock = threading.Lock()
+_write_lock = threading.Lock()
 
-    target_file = file_map[file_param]
 
+def _fake_ip() -> str:
+    return f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+
+
+def _append_lines(log_path: str, lines: list):
     try:
-        n = min(max(int(request.args.get("lines", 30)), 1), 200)
-
-        if not os.path.exists(target_file):
-            return jsonify({
-                "lines":       [f"({target_file} does not exist yet)"],
-                "file":        target_file,
-                "total_lines": 0,
-            })
-
-        with open(target_file, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-
-        tail = [ln.rstrip() for ln in lines[-n:] if ln.strip()]
-        return jsonify({
-            "lines":       tail,
-            "total_lines": len(lines),
-            "file":        target_file,
-        })
+        dir_path = os.path.dirname(os.path.abspath(log_path))
+        os.makedirs(dir_path, exist_ok=True)
+        with _write_lock:
+            with open(log_path, 'a', encoding='utf-8') as fh:
+                for line in lines:
+                    fh.write(line + '\n')
+                fh.flush()
+                os.fsync(fh.fileno())
+        _log.info('[dummy_app] wrote %d lines to %s', len(lines), log_path)
     except Exception as exc:
-        return jsonify({"error": str(exc), "lines": []}), 500
+        _log.error('[dummy_app] WRITE FAILED to %s: %s', log_path, exc)
+        raise
 
 
-# ── Force ship ────────────────────────────────────────────────────────────────
+def _write_error_event(log_path, http_status, error_code, description, api):
+    ts = _ts()
+    ip = _fake_ip()
+    _append_lines(log_path, [
+        f"[{ts}] [INFO] {api} IP: {ip}",
+        f"[{ts}] [ERROR] {description} {{'error_code': {error_code}}}",
+        f"[{ts}] [INFO] {api} Status Code: {http_status}",
+    ])
 
-@app.route("/api/dummy/ship-now", methods=["POST"])
-def ship_now():
-    """Force-ship ssl_events.log to S3 right now (resets byte offset)."""
-    original_pos = shipper._last_shipped_pos
-    shipper._last_shipped_pos = 0
-    success = shipper.ship()
-    if not success:
-        shipper._last_shipped_pos = original_pos
 
-    if success:
+def _write_success_event(log_path, http_status, api):
+    ts = _ts()
+    ip = _fake_ip()
+    _append_lines(log_path, [
+        f"[{ts}] [INFO] {api} IP: {ip}",
+        f"[{ts}] [INFO] {api} Status Code: {http_status}",
+    ])
+
+
+def _generate_random_events(log_path, count, error_pct):
+    errors = successes = 0
+    for _ in range(count):
+        if random.randint(1, 100) <= error_pct:
+            s = random.choice(_ERROR_SCENARIOS)
+            _write_error_event(log_path, *s)
+            errors += 1
+        else:
+            status, api = random.choice(_SUCCESS_SCENARIOS)
+            _write_success_event(log_path, status, api)
+            successes += 1
+    return {'errors': errors, 'successes': successes, 'total': count}
+
+
+def _tail_logs(log_path, events_log_path, n=100):
+    """Return last n dummy-related lines from both logs, newest first."""
+    lines = []
+    for path in [log_path, events_log_path]:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                for line in fh:
+                    l = line.rstrip()
+                    if not l:
+                        continue
+                    low = l.lower()
+                    if 'dummy' in low or 'resolved' in low or 'ssl_event' in low:
+                        lines.append(l)
+        except Exception:
+            pass
+    return list(reversed(lines[-n:]))
+
+
+
+def _count_stats(log_path):
+    """Count ERROR events and 2xx lines for dummy app entries."""
+    errors = successes = 0
+    if not os.path.exists(log_path):
+        return {'errors': 0, 'info': 0, 'total': 0}
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as fh:
+            for line in fh:
+                low = line.lower()
+                if 'dummy' not in low:
+                    continue
+                if '[error]' in low:
+                    errors += 1
+                elif '[info]' in low and 'status code:' in low:
+                    successes += 1
+    except Exception:
+        pass
+    return {'errors': errors, 'info': successes, 'total': errors + successes}
+
+
+
+# ── Blueprint factory ──────────────────────────────────────────────────────────
+
+def create_dummy_app_blueprint(base_dir: str, log_filename: str, run_conversion_outputs):
+    _template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+    dummy_bp = Blueprint('dummy_app', __name__, template_folder=_template_dir)
+
+    log_path        = os.path.join(base_dir, 'logs', log_filename)
+    events_log_path = os.path.join(base_dir, 'logs', 'ssl_events.log')
+
+    def _get_simulator():
+        try:
+            from error_simulator import ErrorSimulator  # type: ignore
+            return ErrorSimulator(_log, events_log_path)
+        except ImportError:
+            return None
+
+    # ── Debug endpoint — call this to verify paths and write a test line ─────
+    @dummy_bp.route('/api/dummy-app/debug', methods=['GET'])
+    def dummy_debug():
+        """Returns path info and attempts a test write. Visit this URL if errors
+        are not appearing on the dashboard."""
+        import platform
+        test_written = False
+        test_error   = None
+        try:
+            _write_error_event(
+                log_path, 495, 9010,
+                'DEBUG TEST: SSL certificate expired for domain api.dummy-app.internal',
+                'GET /api/dummy/status',
+            )
+            test_written = True
+            run_conversion_outputs()
+        except Exception as e:
+            test_error = str(e)
+
         return jsonify({
-            "shipped":               True,
-            "s3_key":                shipper.last_s3_key,
-            "local_events_log":      EVENTS_LOG_FILE,
-            "local_application_log": APP_MIRROR_FILE,
+            'log_path':        log_path,
+            'log_path_exists': os.path.exists(log_path),
+            'log_dir_exists':  os.path.isdir(os.path.dirname(os.path.abspath(log_path))),
+            'events_log_path': events_log_path,
+            'base_dir':        base_dir,
+            'cwd':             os.getcwd(),
+            'platform':        platform.system(),
+            'test_write_ok':   test_written,
+            'test_error':      test_error,
+        })
+
+    # ── HTML page ──────────────────────────────────────────────────────────────
+    @dummy_bp.route('/dummy-app', methods=['GET'])
+    def dummy_app_page():
+        stats = _count_stats(log_path)
+        with _state_lock:
+            states = {k: dict(v) for k, v in _scenario_states.items()}
+        return render_template(
+            'dummy_app.html',
+            stats=stats,
+            scenarios=NAMED_SCENARIOS,
+            states=states,
+        )
+
+    # ── Trigger named error + auto-ship ───────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/trigger-error', methods=['POST'])
+    def trigger_error():
+        body       = request.get_json(silent=True) or {}
+        error_type = body.get('error_type', '').strip()
+
+        if error_type not in NAMED_SCENARIOS:
+            return jsonify({'error': f"Unknown error_type '{error_type}'",
+                            'valid': list(NAMED_SCENARIOS.keys())}), 400
+
+        meta = NAMED_SCENARIOS[error_type]
+
+        # Write 3-line entry to application.log
+        _write_error_event(log_path, meta['http'], meta['code'], meta['desc'], meta['api'])
+
+        # Also write to ssl_events.log via ErrorSimulator if available
+        sim = _get_simulator()
+        if sim:
+            try:
+                sim.generate_error(error_type)
+            except Exception as e:
+                _log.warning('ErrorSimulator failed: %s', e)
+
+        # Update scenario state
+        now = _ts()
+        with _state_lock:
+            s = _scenario_states[error_type]
+            s['state']         = 'triggered'
+            s['triggered_at']  = now
+            s['resolved_at']   = None
+            s['fixed_at']      = None
+            s['trigger_count'] = s.get('trigger_count', 0) + 1
+            s['snow_ticket']   = None
+
+        # Auto-ship: trigger conversion immediately
+        try:
+            run_conversion_outputs()
+        except Exception as e:
+            _log.warning('Auto-ship failed: %s', e)
+
+        _log.info('dummy_app triggered + shipped: %s (HTTP %s, code %s)',
+                  error_type, meta['http'], meta['code'])
+
+        return jsonify({
+            'success':    True,
+            'error_type': error_type,
+            'error_code': meta['code'],
+            'http_status': meta['http'],
+            'description': meta['desc'],
+            'shipped':     True,
         }), 200
 
-    return jsonify({
-        "shipped":               False,
-        "error":                 "Ship failed — check RAW_LOGS_BUCKET and log file",
-        "bucket":                os.getenv("RAW_LOGS_BUCKET", "(not set)"),
-        "events_log_exists":     os.path.exists(EVENTS_LOG_FILE),
-        "local_events_log":      EVENTS_LOG_FILE,
-        "local_application_log": APP_MIRROR_FILE,
-    }), 500
+    # ── Resolve a named error ──────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/trigger-resolution', methods=['POST'])
+    def trigger_resolution():
+        body       = request.get_json(silent=True) or {}
+        error_type = body.get('error_type', '').strip()
 
+        if error_type not in NAMED_SCENARIOS:
+            return jsonify({'error': f"Unknown error_type '{error_type}'"}), 400
 
-# ── Debug ─────────────────────────────────────────────────────────────────────
+        sim = _get_simulator()
+        resolution_line = ''
+        if sim:
+            try:
+                resolution_line = sim.generate_resolution(error_type, {})
+            except Exception as e:
+                _log.warning('ErrorSimulator.generate_resolution failed: %s', e)
 
-@app.route("/api/dummy/debug", methods=["GET"])
-def debug():
-    """
-    Verify log paths, file sizes, permissions, and S3 config.
-    Call this first when troubleshooting.
-    """
-    def _check(path):
-        exists = os.path.exists(path)
-        size   = os.path.getsize(path) if exists else 0
-        try:
-            with open(path, "a"):
-                pass
-            writable = True
-        except Exception:
-            writable = False
-        return {
-            "path":     path,
-            "exists":   exists,
-            "bytes":    size,
-            "writable": writable,
-        }
+        if not resolution_line:
+            resolution_line = f'[{_ts()}] [INFO] RESOLVED: {error_type} resolved manually.'
+            _append_lines(events_log_path, [resolution_line])
 
-    return jsonify({
-        "log_dir":               LOG_DIR,
-        "files": {
-            "app_log":          _check(APP_LOG_FILE),
-            "ssl_events_log":   _check(EVENTS_LOG_FILE),
-            "application_log":  _check(APP_MIRROR_FILE),   # S3 mirror
-        },
-        "shipper": {
-            "shipped_up_to_bytes": shipper._last_shipped_pos,
-            "has_new_events":      shipper.has_new_events(),
-            "last_s3_key":         shipper.last_s3_key or "never",
-        },
-        "env": {
-            "raw_logs_bucket":  os.getenv("RAW_LOGS_BUCKET",     "(not set)"),
-            "raw_logs_prefix":  os.getenv("RAW_LOGS_PREFIX",     "raw-logs/"),
-            "aws_region":       os.getenv("AWS_DEFAULT_REGION",  "us-east-1"),
-        },
-        "active_errors": list(_active_errors.keys()),
-    }), 200
+        with _state_lock:
+            s = _scenario_states[error_type]
+            s['state']       = 'resolved'
+            s['resolved_at'] = _ts()
 
+        return jsonify({'success': True, 'error_type': error_type,
+                        'resolution_line': resolution_line}), 200
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+    # ── Mark as fixed by Bedrock (called by dashboard fix pipeline) ────────────
+    @dummy_bp.route('/api/dummy-app/mark-fixed', methods=['POST'])
+    def mark_fixed():
+        """Called by the dashboard /api/fix-error pipeline after successful remediation."""
+        body       = request.get_json(silent=True) or {}
+        error_code = str(body.get('error_code', ''))
+        snow_num   = body.get('snow_number', '')
+        snow_id    = body.get('snow_sys_id', '')
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+        # Find which scenario matches this error code
+        matched = None
+        for t, m in NAMED_SCENARIOS.items():
+            if str(m['code']) == error_code:
+                matched = t
+                break
 
+        if not matched:
+            return jsonify({'error': f'No scenario for error_code {error_code}'}), 404
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+        with _state_lock:
+            s = _scenario_states[matched]
+            s['state']       = 'fixed'
+            s['fixed_at']    = _ts()
+            s['snow_ticket'] = {'number': snow_num, 'sys_id': snow_id} if snow_num else None
 
-if __name__ == "__main__":
-    port = int(os.getenv("APP_PORT", 5001))
-    logger.info("Starting dummy-infra-app on port %d", port)
-    logger.info("")
-    logger.info("Local log files (open to verify without S3):")
-    logger.info("  Events (shipped to S3): %s", EVENTS_LOG_FILE)
-    logger.info("  S3 mirror copy:         %s", APP_MIRROR_FILE)
-    logger.info("  Flask request log:      %s", APP_LOG_FILE)
-    logger.info("")
-    app.run(host="0.0.0.0", port=port, debug=False)
+        _log.info('dummy_app marked fixed: %s (code=%s)', matched, error_code)
+        return jsonify({'success': True, 'error_type': matched}), 200
+
+    # ── Random event generator ─────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/generate', methods=['POST'])
+    def generate():
+        body      = request.get_json(silent=True) or {}
+        count     = max(1, min(500, int(body.get('count', 50))))
+        error_pct = max(0, min(100, int(body.get('error_pct', 25))))
+        result    = _generate_random_events(log_path, count, error_pct)
+        run_conversion_outputs()
+        return jsonify({'success': True, 'generated': result}), 200
+
+    # ── Force conversion ───────────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/ship', methods=['POST'])
+    def ship():
+        run_conversion_outputs()
+        return jsonify({'success': True, 'message': 'Conversion triggered.'}), 200
+
+    # ── Log tail ───────────────────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/logs', methods=['GET'])
+    def dummy_logs():
+        n     = min(200, max(1, int(request.args.get('n', 100))))
+        lines = _tail_logs(log_path, events_log_path, n)
+        return jsonify({'lines': lines, 'count': len(lines)}), 200
+
+    # ── Stats ──────────────────────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/stats', methods=['GET'])
+    def dummy_stats():
+        return jsonify(_count_stats(log_path)), 200
+
+    # ── Scenario states ────────────────────────────────────────────────────────
+    @dummy_bp.route('/api/dummy-app/scenario-states', methods=['GET'])
+    def scenario_states():
+        with _state_lock:
+            states = {k: dict(v) for k, v in _scenario_states.items()}
+        return jsonify({'states': states}), 200
+
+    return dummy_bp
