@@ -241,19 +241,22 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
             return jsonify({'error': str(exc)}), 502
 
         fixed_at = datetime.now(timezone.utc).isoformat()
+        # Mark as resolved locally regardless of whether ServiceNow state change succeeded
+        # (state change may have been silently skipped if user lacks incident_manager role)
+        resolved_state = result.get('state') or '6'
         for ticket in _ticket_store.values():
             if ticket.get('sys_id') == sys_id:
-                ticket['state']       = result.get('state', '6')
-                ticket['state_label'] = _state_label(result.get('state', '6'))
+                ticket['state']       = resolved_state
+                ticket['state_label'] = _state_label(resolved_state)
                 ticket['fix_status']  = 'resolved'
                 ticket['fixed_at']    = fixed_at
                 break
 
         return jsonify({
             'sys_id':      sys_id,
-            'number':      result.get('number'),
-            'state':       result.get('state'),
-            'state_label': _state_label(result.get('state', '6')),
+            'number':      result.get('number') or '',
+            'state':       resolved_state,
+            'state_label': _state_label(resolved_state),
             'fixed_at':    fixed_at,
         }), 200
 
@@ -291,15 +294,16 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
         except Exception as exc:
             return jsonify({'error': str(exc)}), 502
 
-        # Sync in-memory ticket store — update state, label, and fix_status
+        # Sync in-memory ticket store — always use the intended state locally
+        # even if ServiceNow state change was silently skipped due to 403
         new_state = update_fields.get('state', '')
+        effective_state = result.get('state') or new_state
         for ticket in _ticket_store.values():
             if ticket.get('sys_id') == sys_id:
-                if new_state:
-                    ticket['state']       = new_state
-                    ticket['state_label'] = _state_label(new_state)
-                    # Mark as resolved when state is Resolved(6) or Closed(7)
-                    if new_state in ('6', '7'):
+                if effective_state:
+                    ticket['state']       = effective_state
+                    ticket['state_label'] = _state_label(effective_state)
+                    if effective_state in ('6', '7'):
                         ticket['fix_status'] = 'resolved'
                         ticket['fixed_at']   = _ts_now()
                 break
@@ -307,8 +311,8 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
         return jsonify({
             'sys_id':      sys_id,
             'number':      result.get('number') or '',
-            'state':       result.get('state')  or new_state,
-            'state_label': _state_label(result.get('state') or new_state),
+            'state':       effective_state,
+            'state_label': _state_label(effective_state),
             'updated':     True,
         }), 200
 
@@ -381,19 +385,22 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
                         'state':      new_state,
                         **extra
                     })
-                    fix_status = 'resolved' if remediation['success'] else 'in_progress'
-                    _fallback    = updated.get('_fallback', False)
-                    _snow_err    = updated.get('_error', '')
+                    fix_status   = 'resolved' if remediation['success'] else 'in_progress'
+                    _state_skipped = updated.get('_state_skipped', False)
+                    # If state change was skipped (403), use the intended state locally
                     _real_state  = updated.get('state') or new_state
+                    # Build a clear state label — don't expose 403 errors to the user
+                    if _state_skipped and remediation['success']:
+                        _state_label_str = 'Resolved (work note added — state change requires incident_manager role in ServiceNow)'
+                    else:
+                        _state_label_str = _state_label(_real_state)
                     ticket_result = {
                         'sys_id':      sys_id,
-                        'number':      updated.get('number') or sys_id[:8],
-                        'state':       _real_state,
-                        'state_label': ('Work note added (state change requires elevated role)'
-                                        if _fallback else _state_label(_real_state)),
+                        'number':      updated.get('number') or '',
+                        'state':       new_state,           # use intended state locally
+                        'state_label': _state_label_str,
                         'action':      'updated',
                         'fix_status':  fix_status,
-                        'note':        _snow_err if _snow_err else '',
                     }
                     # Sync in-memory store
                     for t in _ticket_store.values():
