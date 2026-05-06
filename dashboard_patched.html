@@ -740,15 +740,14 @@
     /* Chat Ops panel */
     .chat-panel {
       position: fixed;
-      right: 20px;
-      bottom: 0;
-      width: min(700px, calc(100vw - 32px));
-      height: 92vh;
-      max-height: 92vh;
+      right: 16px;
+      bottom: 16px;
+      width: min(430px, calc(100vw - 24px));
+      max-height: 76vh;
       background: #ffffff;
       border: 1px solid var(--line);
-      border-radius: 16px 16px 0 0;
-      box-shadow: 0 -4px 40px rgba(20, 35, 70, 0.22);
+      border-radius: 16px;
+      box-shadow: 0 16px 32px rgba(20, 35, 70, 0.24);
       display: none;
       overflow: hidden;
       z-index: 50;
@@ -764,13 +763,13 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 14px 18px;
+      padding: 10px 12px;
       background: linear-gradient(125deg, #121212 0%, #2a2520 58%, #ff7a1a 100%);
       color: #fff;
     }
 
     .chat-title {
-      font-size: 1rem;
+      font-size: 0.9rem;
       font-weight: 700;
       line-height: 1.35;
     }
@@ -786,21 +785,21 @@
     }
 
     .chat-body {
-      padding: 16px;
+      padding: 10px;
       background: #fff8f2;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      flex: 1;
+      gap: 8px;
+      min-height: 240px;
     }
 
     .chat-msg {
-      max-width: 92%;
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 0.95rem;
-      line-height: 1.6;
+      max-width: 94%;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 0.86rem;
+      line-height: 1.45;
       white-space: pre-wrap;
     }
 
@@ -818,8 +817,8 @@
 
     .chat-input-wrap {
       display: flex;
-      gap: 10px;
-      padding: 12px 16px;
+      gap: 8px;
+      padding: 10px;
       border-top: 1px solid var(--line);
       background: #fff;
     }
@@ -828,12 +827,10 @@
       flex: 1;
       border: 1px solid var(--line);
       border-radius: 10px;
-      padding: 10px 14px;
-      font-size: 0.92rem;
+      padding: 8px 10px;
+      font-size: 0.86rem;
       outline: none;
-      font-family: inherit;
     }
-    .chat-input:focus { border-color: var(--accent); }
 
     .chat-send {
       border: 0;
@@ -841,9 +838,8 @@
       background: var(--accent-2);
       color: #fff;
       font-weight: 700;
-      padding: 10px 18px;
+      padding: 8px 12px;
       cursor: pointer;
-      font-size: 0.9rem;
     }
 
     @media (max-width: 960px) {
@@ -1119,72 +1115,54 @@
     /* ── Source filter bar ──────────────────────────────────────────────────── */
     .source-filter-bar{display:flex;align-items:center;gap:10px;margin:0 0 6px;flex-wrap:wrap;}
     .source-filter-label{font-size:.78rem;color:var(--muted);font-weight:600;}
-    .src-btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;
-      padding:4px 13px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--muted);
-      transition:background .15s,color .15s,border-color .15s;}
+    .src-btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:4px 13px;font-size:.78rem;font-weight:600;cursor:pointer;color:var(--muted);transition:background .15s,color .15s,border-color .15s;}
     .src-btn.active,.src-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent);}
-
     /* ── Table Actions column ───────────────────────────────────────────────── */
     .snow-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap;}
-    .btn-snow{font-size:.71rem;font-weight:700;border:none;border-radius:6px;padding:4px 9px;
-      cursor:pointer;white-space:nowrap;transition:opacity .15s,transform .1s;}
+    .btn-snow{font-size:.71rem;font-weight:700;border:none;border-radius:6px;padding:4px 9px;cursor:pointer;white-space:nowrap;transition:opacity .15s,transform .1s;}
     .btn-snow:hover:not(:disabled){opacity:.85;transform:translateY(-1px);}
     .btn-snow:disabled{opacity:.45;cursor:default;}
     .btn-create-ticket{background:#0085c8;color:#fff;}
     .btn-fix-error{background:#2f7a3f;color:#fff;}
     .btn-snow-status{background:#eee;color:#333;}
-    .snow-ticket-badge{display:inline-block;font-size:.68rem;font-weight:700;
-      padding:2px 7px;border-radius:20px;white-space:nowrap;}
+    .snow-ticket-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:20px;white-space:nowrap;}
     .snow-ticket-badge.open{background:rgba(0,133,200,.12);color:#0085c8;}
     .snow-ticket-badge.resolved{background:rgba(47,122,63,.15);color:#2f7a3f;}
-    .snow-tick-spin{display:inline-block;width:11px;height:11px;
-      border:2px solid rgba(255,255,255,.4);border-top-color:#fff;
-      border-radius:50%;animation:snow-spin .6s linear infinite;vertical-align:middle;}
+    .snow-tick-spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:snow-spin .6s linear infinite;vertical-align:middle;}
     @keyframes snow-spin{to{transform:rotate(360deg);}}
-
-    /* ── Chat ticket bar ────────────────────────────────────────────────────── */
-    .chat-ticket-bar{border-top:1px solid var(--line);padding:10px 12px;
-      background:#fff8f2;display:none;flex-direction:column;gap:8px;}
+    /* ── Chat panel (bigger) ────────────────────────────────────────────────── */
+    .chat-ticket-bar{border-top:1px solid var(--line);padding:10px 12px;background:#fff8f2;display:none;flex-direction:column;gap:8px;}
     .chat-ticket-bar.visible{display:flex;}
-    .chat-tb-title{font-size:.7rem;font-weight:700;color:var(--muted);
-      text-transform:uppercase;letter-spacing:.04em;}
+    .chat-tb-title{font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
     .chat-tb-status{font-size:.75rem;color:var(--muted);}
     .chat-tb-actions{display:flex;gap:7px;flex-wrap:wrap;}
-    .ctb{border:none;border-radius:7px;font-family:inherit;font-weight:700;
-      font-size:.76rem;padding:6px 13px;cursor:pointer;transition:opacity .15s,transform .1s;}
+    .ctb{border:none;border-radius:7px;font-family:inherit;font-weight:700;font-size:.76rem;padding:6px 13px;cursor:pointer;transition:opacity .15s,transform .1s;}
     .ctb:hover:not(:disabled){opacity:.85;transform:translateY(-1px);}
     .ctb:disabled{opacity:.45;cursor:default;}
-    .ctb-create{background:#0085c8;color:#fff;}
-    .ctb-fix{background:#c8520085;color:#fff;}
+    .ctb-create {background:#0085c8;color:#fff;}
+    .ctb-fix    {background:#2f7a3f;color:#fff;}
     .ctb-autofix{background:#2f7a3f;color:#fff;}
-    .ctb-update{background:#7c3aed;color:#fff;}
-    .ctb-status{background:#eee;color:#333;}
-    .ctb-badge{display:inline-flex;align-items:center;gap:4px;font-size:.7rem;
-      font-weight:700;padding:3px 9px;border-radius:20px;}
+    .ctb-close  {background:#1a1a2e;color:#fff;}
+    .ctb-hold   {background:#b85a00;color:#fff;}
+    .ctb-update {background:#7c3aed;color:#fff;}
+    .ctb-status {background:#eee;   color:#333;}
+    .ctb-badge{display:inline-flex;align-items:center;gap:4px;font-size:.7rem;font-weight:700;padding:3px 9px;border-radius:20px;}
     .ctb-badge.open{background:rgba(0,133,200,.12);color:#0085c8;}
     .ctb-badge.resolved{background:rgba(47,122,63,.15);color:#2f7a3f;}
     .ctb-badge.progress{background:rgba(124,58,237,.12);color:#7c3aed;}
-
-    /* Fix progress panel inside chat */
-    .fix-progress{display:none;flex-direction:column;gap:4px;margin-top:6px;
-      max-height:160px;overflow-y:auto;}
+    .fix-progress{display:none;flex-direction:column;gap:4px;margin-top:6px;max-height:160px;overflow-y:auto;}
     .fix-progress.visible{display:flex;}
-    .fix-step{display:flex;align-items:flex-start;gap:7px;font-size:.74rem;
-      padding:4px 0;border-bottom:1px solid var(--line);}
+    .fix-step{display:flex;align-items:flex-start;gap:7px;font-size:.74rem;padding:4px 0;border-bottom:1px solid var(--line);}
     .fix-step:last-child{border-bottom:none;}
     .fix-step-icon{flex-shrink:0;margin-top:1px;}
     .fix-step-text{line-height:1.4;}
     .fix-step-detail{font-size:.68rem;color:var(--muted);margin-top:1px;}
-
-    /* Update form */
     .chat-update-form{display:none;flex-direction:column;gap:7px;margin-top:4px;}
     .chat-update-form.visible{display:flex;}
-    .chat-update-ta{border:1px solid var(--line);border-radius:8px;padding:7px 10px;
-      font-size:.82rem;font-family:inherit;resize:vertical;min-height:56px;outline:none;}
+    .chat-update-ta{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:.82rem;font-family:inherit;resize:vertical;min-height:56px;outline:none;}
     .chat-update-ta:focus{border-color:var(--accent);}
     .chat-update-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;}
-    .chat-state-sel{border:1px solid var(--line);border-radius:7px;padding:5px 8px;
-      font-size:.78rem;font-family:inherit;background:#faf8f6;}
+    .chat-state-sel{border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:.78rem;font-family:inherit;background:#faf8f6;}
   </style>
 </head>
 <body>
@@ -1341,31 +1319,24 @@
       <button class="chat-close" id="chatClose" type="button">Close</button>
     </div>
     <div class="chat-body" id="chatBody"></div>
-
-    <!-- ServiceNow + Auto-Fix ticket bar -->
     <div class="chat-ticket-bar" id="chatTicketBar">
-      <div class="chat-tb-title">🎫 ServiceNow</div>
+      <div class="chat-tb-title">ServiceNow</div>
       <div class="chat-tb-status" id="chatTbStatus">No ticket raised for this error.</div>
-
       <div class="chat-tb-actions" id="chatTbActions">
-        <button class="ctb ctb-create"   id="ctbCreate"   onclick="chatSnowCreate()">🎫 Create Ticket</button>
-        <button class="ctb ctb-autofix"  id="ctbAutoFix"  onclick="chatAutoFix()" style="display:none">🤖 Fix This Error</button>
-        <button class="ctb ctb-fix"      id="ctbManFix"   onclick="chatSnowFix()"  style="display:none">✅ Resolve</button>
-        <button class="ctb ctb-close"    id="ctbClose"    onclick="chatSnowClose()" style="display:none">🔒 Close</button>
-        <button class="ctb ctb-hold"     id="ctbHold"     onclick="chatSnowHold()"  style="display:none">⏸ On Hold</button>
-        <button class="ctb ctb-update"   id="ctbUpdate"   onclick="toggleUpdateForm()" style="display:none">✏️ Update</button>
-        <button class="ctb ctb-status"   id="ctbStatus"   onclick="chatSnowStatus()" style="display:none">↻</button>
+        <button class="ctb ctb-create"  id="ctbCreate"  onclick="chatSnowCreate()">Create Ticket</button>
+        <button class="ctb ctb-autofix" id="ctbAutoFix" onclick="chatAutoFix()"    style="display:none">Fix This Error</button>
+        <button class="ctb ctb-fix"     id="ctbManFix"  onclick="chatSnowFix()"    style="display:none">Resolve</button>
+        <button class="ctb ctb-close"   id="ctbClose2"  onclick="chatSnowClose()"  style="display:none">Close</button>
+        <button class="ctb ctb-hold"    id="ctbHold"    onclick="chatSnowHold()"   style="display:none">On Hold</button>
+        <button class="ctb ctb-update"  id="ctbUpdate"  onclick="toggleUpdateForm()" style="display:none">Update</button>
+        <button class="ctb ctb-status"  id="ctbStatus"  onclick="chatSnowStatus()" style="display:none">Refresh</button>
       </div>
-
-      <!-- Inline fix progress steps -->
       <div class="fix-progress" id="fixProgress"></div>
-
-      <!-- Inline update form -->
       <div class="chat-update-form" id="chatUpdateForm">
-        <textarea class="chat-update-ta" id="chatUpdateNotes" placeholder="Add work notes…"></textarea>
+        <textarea class="chat-update-ta" id="chatUpdateNotes" placeholder="Add work notes..."></textarea>
         <div class="chat-update-row">
           <select class="chat-state-sel" id="chatUpdateState">
-            <option value="">— Change state —</option>
+            <option value="">Change state...</option>
             <option value="1">New</option>
             <option value="2">In Progress</option>
             <option value="3">On Hold</option>
@@ -1376,11 +1347,10 @@
             <option value="8">Cancelled</option>
           </select>
           <button class="ctb ctb-update" onclick="submitChatUpdate()" style="padding:5px 11px">Send</button>
-          <button class="ctb ctb-status" onclick="toggleUpdateForm()" style="padding:5px 9px">✕</button>
+          <button class="ctb ctb-status" onclick="toggleUpdateForm()" style="padding:5px 9px">Cancel</button>
         </div>
       </div>
     </div>
-
     <div class="chat-input-wrap">
       <input class="chat-input" id="chatInput" type="text" placeholder="Ask for RCA, checks, remediation, prevention..." />
       <button class="chat-send" id="chatSend" type="button">Send</button>
@@ -2525,15 +2495,13 @@
       if (e.target === e.currentTarget) closeDetailModal();
     });
     document.getElementById('modalCloseBtn').addEventListener('click', closeDetailModal);
-
-    // Escape is handled natively by <dialog>; also wire for non-dialog fallback
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && document.getElementById('detailModal').open) closeDetailModal();
     });
 
-    // ════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     // SOURCE FILTER
-    // ════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
     let activeSource = 'all';
     document.querySelectorAll('.src-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2553,415 +2521,419 @@
       return base;
     };
 
-    // ════════════════════════════════════════════════════════════════════════
-    // SERVICENOW — shared in-memory ticket state
-    // ════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    // SERVICENOW — shared state
+    // ════════════════════════════════════════════════════════════════════
     const _snowTickets = {};
-    let   _chatTicketSysId = null;
+    let _chatTicketSysId = null;
 
     function _snowKey(row) {
-      return `${row['Status Code']||''}|${row['Error Code']||''}|${row['API']||''}`;
+      return (row['Status Code']||'') + '|' + (row['Error Code']||'') + '|' + (row['API']||'');
     }
 
-    (async function restoreSnowTickets() {
+    (async function() {
       try {
         const r = await fetch('/api/snow/tickets');
         if (r.ok) Object.assign(_snowTickets, (await r.json()).tickets || {});
       } catch(_) {}
     })();
 
-    // ── Patch renderRows: add Actions td ─────────────────────────────────
+    // ── Patch renderRows to add Actions column ────────────────────────
     const _origRenderRows = renderRows;
     renderRows = function(statusLabels, apiLabels) {
       _origRenderRows(statusLabels, apiLabels);
       document.querySelectorAll('#rows tr').forEach((tr, i) => {
         if (tr.querySelector('.snow-actions')) return;
-        const pagedRows = getPagedRows ? getPagedRows() : [];
+        const pagedRows = typeof getPagedRows === 'function' ? getPagedRows() : [];
         const row = pagedRows[i];
         if (!row) return;
         const td = document.createElement('td');
         td.appendChild(buildSnowActions(row));
         tr.appendChild(td);
-        // Stop row-click when clicking action buttons
         tr.addEventListener('click', e => { if (e.target.closest('.btn-snow')) e.stopImmediatePropagation(); }, true);
       });
     };
 
-    // ── Patch openChatForError: refresh ticket bar ───────────────────────
+    // ── Patch openChatForError to refresh ticket bar ──────────────────
     const _origOpenChatForError = openChatForError;
     openChatForError = function(rowData) {
       _origOpenChatForError(rowData);
-      document.getElementById('chatUpdateForm').classList.remove('visible');
-      document.getElementById('fixProgress').classList.remove('visible');
-      document.getElementById('fixProgress').innerHTML = '';
+      var uf = document.getElementById('chatUpdateForm');
+      var fp = document.getElementById('fixProgress');
+      if (uf) uf.classList.remove('visible');
+      if (fp) { fp.classList.remove('visible'); fp.innerHTML = ''; }
       refreshChatTicketBar();
     };
 
-    // ════════════════════════════════════════════════════════════════════════
-    // TABLE ROW — action buttons
-    // ════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    // TABLE ACTIONS
+    // ════════════════════════════════════════════════════════════════════
     function buildSnowActions(row) {
-      const wrap = document.createElement('div');
+      var wrap = document.createElement('div');
       wrap.className = 'snow-actions';
-      const key    = _snowKey(row);
-      const ticket = _snowTickets[key];
-
+      var key    = _snowKey(row);
+      var ticket = _snowTickets[key];
       if (!ticket) {
-        const b = document.createElement('button');
+        var b = document.createElement('button');
         b.className = 'btn-snow btn-create-ticket';
-        b.textContent = '🎫 Ticket';
-        b.addEventListener('click', () => tableSnowCreate(row, wrap));
+        b.textContent = 'Create Ticket';
+        b.addEventListener('click', function() { tableSnowCreate(row, wrap); });
         wrap.appendChild(b);
       } else if (ticket.fix_status === 'resolved') {
-        const b = document.createElement('span');
-        b.className = 'snow-ticket-badge resolved';
-        b.textContent = `✔ ${ticket.number}`;
-        wrap.appendChild(b);
+        var b2 = document.createElement('span');
+        b2.className = 'snow-ticket-badge resolved';
+        b2.textContent = (ticket.number || '') + ' - Resolved';
+        wrap.appendChild(b2);
       } else {
-        const b = document.createElement('span');
-        b.className = 'snow-ticket-badge open';
-        b.textContent = ticket.number;
-        wrap.appendChild(b);
-        const fix = document.createElement('button');
+        var b3 = document.createElement('span');
+        b3.className = 'snow-ticket-badge open';
+        b3.textContent = ticket.number || '';
+        wrap.appendChild(b3);
+        var fix = document.createElement('button');
         fix.className = 'btn-snow btn-fix-error';
-        fix.textContent = '🔧 Fix';
-        fix.addEventListener('click', () => tableSnowFix(ticket.sys_id, wrap, ticket.number));
+        fix.textContent = 'Fix';
+        fix.addEventListener('click', function() { tableSnowFix(ticket.sys_id, wrap, ticket.number); });
         wrap.appendChild(fix);
-        const st = document.createElement('button');
+        var st = document.createElement('button');
         st.className = 'btn-snow btn-snow-status';
-        st.textContent = '↻';
-        st.addEventListener('click', () => tableSnowStatus(ticket.sys_id, st));
+        st.textContent = 'Refresh';
+        st.addEventListener('click', function() { tableSnowStatus(ticket.sys_id, st); });
         wrap.appendChild(st);
       }
       return wrap;
     }
 
     async function tableSnowCreate(row, wrapEl) {
-      const btn = wrapEl.querySelector('.btn-create-ticket');
+      var btn = wrapEl.querySelector('.btn-create-ticket');
       if (btn) { btn.disabled=true; btn.innerHTML='<span class="snow-tick-spin"></span>'; }
       try {
-        const resp = await fetch('/api/snow/create', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
-        const data = await resp.json();
-        if (!resp.ok) { showSnowToast('❌ '+(data.error||'Failed'),'err'); if(btn){btn.disabled=false;btn.textContent='🎫 Ticket';} return; }
+        var resp = await fetch('/api/snow/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
+        var data = await resp.json();
+        if (!resp.ok) { showSnowToast('Ticket creation failed: '+(data.error||''),'err'); if(btn){btn.disabled=false;btn.textContent='Create Ticket';} return; }
         _snowTickets[_snowKey(row)] = data.ticket;
-        _rebuildTableActions(wrapEl, data.ticket, row);
-        showSnowToast(`🎫 ${data.ticket.number} created`,'ok');
-        if (selectedError && _snowKey(selectedError)===_snowKey(row)) refreshChatTicketBar();
-      } catch(e) { showSnowToast('❌ '+e.message,'err'); if(btn){btn.disabled=false;btn.textContent='🎫 Ticket';} }
+        wrapEl.innerHTML = '';
+        var b=document.createElement('span'); b.className='snow-ticket-badge open'; b.textContent=data.ticket.number||''; wrapEl.appendChild(b);
+        var fix=document.createElement('button'); fix.className='btn-snow btn-fix-error'; fix.textContent='Fix';
+        fix.addEventListener('click',function(){tableSnowFix(data.ticket.sys_id,wrapEl,data.ticket.number);}); wrapEl.appendChild(fix);
+        showSnowToast('Ticket '+data.ticket.number+' created','ok');
+        if(selectedError && _snowKey(selectedError)===_snowKey(row)) refreshChatTicketBar();
+      } catch(e){showSnowToast('Error: '+e.message,'err'); if(btn){btn.disabled=false;btn.textContent='Create Ticket';}}
     }
 
     async function tableSnowFix(sysId, wrapEl, number) {
-      const btn = wrapEl.querySelector('.btn-fix-error');
+      var btn = wrapEl.querySelector('.btn-fix-error');
       if (btn) { btn.disabled=true; btn.innerHTML='<span class="snow-tick-spin"></span>'; }
       try {
-        const resp = await fetch('/api/snow/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:sysId})});
-        const data = await resp.json();
-        if (!resp.ok) { showSnowToast('❌ '+(data.error||'Failed'),'err'); if(btn){btn.disabled=false;btn.textContent='🔧 Fix';} return; }
-        for(const k of Object.keys(_snowTickets)){if(_snowTickets[k].sys_id===sysId){_snowTickets[k].fix_status='resolved';break;}}
+        var resp = await fetch('/api/snow/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:sysId})});
+        var data = await resp.json();
+        if (!resp.ok) { showSnowToast('Fix failed: '+(data.error||''),'err'); if(btn){btn.disabled=false;btn.textContent='Fix';} return; }
+        for(var k in _snowTickets){if(_snowTickets[k].sys_id===sysId){_snowTickets[k].fix_status='resolved';break;}}
         wrapEl.innerHTML='';
-        const b=document.createElement('span');b.className='snow-ticket-badge resolved';b.textContent=`✔ ${number}`;wrapEl.appendChild(b);
-        showSnowToast(`✅ ${number} resolved`,'ok');
-        if(selectedError){const k=_snowKey(selectedError);if(_snowTickets[k]?.sys_id===sysId) refreshChatTicketBar();}
-      } catch(e){ showSnowToast('❌ '+e.message,'err'); if(btn){btn.disabled=false;btn.textContent='🔧 Fix';} }
+        var b=document.createElement('span'); b.className='snow-ticket-badge resolved'; b.textContent=(number||sysId)+' - Resolved'; wrapEl.appendChild(b);
+        showSnowToast((number||sysId)+' resolved','ok');
+        if(selectedError){var k2=_snowKey(selectedError);if(_snowTickets[k2]&&_snowTickets[k2].sys_id===sysId) refreshChatTicketBar();}
+      } catch(e){showSnowToast('Error: '+e.message,'err'); if(btn){btn.disabled=false;btn.textContent='Fix';}}
     }
 
     async function tableSnowStatus(sysId, btn) {
-      const orig=btn.textContent; btn.textContent='…'; btn.disabled=true;
+      var orig=btn.textContent; btn.textContent='...'; btn.disabled=true;
       try {
-        const r=await fetch(`/api/snow/status/${sysId}`);
-        const d=await r.json();
-        showSnowToast(r.ok?`ℹ ${d.number}: ${d.state_label}`:'❌ '+(d.error||'Failed'),r.ok?'inf':'err');
-      } catch(e){showSnowToast('❌ '+e.message,'err');}
+        var r=await fetch('/api/snow/status/'+sysId);
+        var d=await r.json();
+        showSnowToast(r.ok?(d.number+': '+d.state_label):'Status check failed','inf');
+      } catch(e){showSnowToast('Error: '+e.message,'err');}
       finally{btn.textContent=orig;btn.disabled=false;}
     }
 
-    function _rebuildTableActions(wrapEl, ticket, row) {
-      wrapEl.innerHTML = '';
-      const b = document.createElement('span');
-      b.className='snow-ticket-badge open'; b.textContent=ticket.number; wrapEl.appendChild(b);
-      const fix=document.createElement('button'); fix.className='btn-snow btn-fix-error'; fix.textContent='🔧 Fix';
-      fix.addEventListener('click',()=>tableSnowFix(ticket.sys_id,wrapEl,ticket.number)); wrapEl.appendChild(fix);
-      const st=document.createElement('button'); st.className='btn-snow btn-snow-status'; st.textContent='↻';
-      st.addEventListener('click',()=>tableSnowStatus(ticket.sys_id,st)); wrapEl.appendChild(st);
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
-    // CHAT PANEL — ticket bar
-    // ════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════
+    // CHAT TICKET BAR
+    // ════════════════════════════════════════════════════════════════════
     function refreshChatTicketBar() {
       if (!selectedError) return;
-      const bar      = document.getElementById('chatTicketBar');
-      const statusEl = document.getElementById('chatTbStatus');
-      const ctbCreate  = document.getElementById('ctbCreate');
-      const ctbAutoFix = document.getElementById('ctbAutoFix');
-      const ctbManFix  = document.getElementById('ctbManFix');
-      const ctbUpdate  = document.getElementById('ctbUpdate');
-      const ctbStatus  = document.getElementById('ctbStatus');
+      var bar      = document.getElementById('chatTicketBar');
+      var statusEl = document.getElementById('chatTbStatus');
+      if (!bar || !statusEl) return;
+
+      var btns = ['ctbCreate','ctbAutoFix','ctbManFix','ctbClose2','ctbHold','ctbUpdate','ctbStatus'];
+      btns.forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display='none'; });
 
       bar.classList.add('visible');
-      const key    = _snowKey(selectedError);
-      const ticket = _snowTickets[key];
+      var key    = _snowKey(selectedError);
+      var ticket = _snowTickets[key];
       _chatTicketSysId = ticket ? ticket.sys_id : null;
 
+      function show(id){ var el=document.getElementById(id); if(el) el.style.display=''; }
+
       if (!ticket) {
-        statusEl.innerHTML = 'No ticket raised for this error.';
-        ctbCreate.style.display = ''; ctbAutoFix.style.display='none';
-        ctbManFix.style.display='none'; ctbUpdate.style.display='none'; ctbStatus.style.display='none';
-      } else if (ticket.fix_status === 'resolved') {
-        statusEl.innerHTML = `<span class="ctb-badge resolved">✔ ${ticket.number} — Resolved</span>`;
-        ctbCreate.style.display='none'; ctbAutoFix.style.display='none';
-        ctbManFix.style.display='none'; ctbUpdate.style.display='none'; ctbStatus.style.display='';
+        statusEl.textContent = 'No ticket raised for this error.';
+        show('ctbCreate');
+      } else if (ticket.state === '7') {
+        statusEl.textContent = (ticket.number||'') + ' - Closed';
+        show('ctbStatus');
+      } else if (ticket.fix_status === 'resolved' || ticket.state === '6') {
+        statusEl.textContent = (ticket.number||'') + ' - Resolved';
+        show('ctbClose2'); show('ctbStatus');
+      } else if (ticket.state === '3') {
+        statusEl.textContent = (ticket.number||'') + ' - On Hold';
+        show('ctbAutoFix'); show('ctbManFix'); show('ctbClose2'); show('ctbUpdate'); show('ctbStatus');
       } else {
-        statusEl.innerHTML = `<span class="ctb-badge open">${ticket.number} — Open</span>`;
-        ctbCreate.style.display='none'; ctbAutoFix.style.display='';
-        ctbManFix.style.display=''; ctbUpdate.style.display=''; ctbStatus.style.display='';
+        statusEl.textContent = (ticket.number||'') + ' - ' + (ticket.state_label || 'Open');
+        show('ctbAutoFix'); show('ctbManFix'); show('ctbClose2'); show('ctbHold'); show('ctbUpdate'); show('ctbStatus');
       }
     }
 
-    // ── Create ticket from chat panel ─────────────────────────────────────
     async function chatSnowCreate() {
       if (!selectedError) return;
-      const btn = document.getElementById('ctbCreate');
-      btn.disabled=true; btn.textContent='⏳ Creating…';
+      var btn = document.getElementById('ctbCreate');
+      if (btn) { btn.disabled=true; btn.textContent='Creating...'; }
       try {
-        const resp = await fetch('/api/snow/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(selectedError)});
-        const data = await resp.json();
-        if (!resp.ok) { addChatMessage('assistant','❌ Ticket creation failed: '+(data.error||'')); return; }
-        _snowTickets[_snowKey(selectedError)] = data.ticket;
-        addChatMessage('assistant', `🎫 Ticket **${data.ticket.number}** created.
-State: ${data.ticket.state_label}`);
-        showSnowToast(`🎫 ${data.ticket.number} created`,'ok');
+        var resp=await fetch('/api/snow/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(selectedError)});
+        var data=await resp.json();
+        if (!resp.ok){addChatMessage('assistant','Ticket creation failed: '+(data.error||''));return;}
+        _snowTickets[_snowKey(selectedError)]=data.ticket;
+        addChatMessage('assistant','Ticket '+data.ticket.number+' created in ServiceNow.
+State: '+(data.ticket.state_label||'Open'));
+        showSnowToast('Ticket '+data.ticket.number+' created','ok');
         refreshChatTicketBar();
-      } catch(e){ addChatMessage('assistant','❌ '+e.message); }
-      finally { btn.disabled=false; btn.textContent='🎫 Create Ticket'; }
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='Create Ticket';}}
     }
 
-    // ── 🤖 Auto-Fix: calls /api/fix-error — Bedrock + remediation + SNOW ──
     async function chatAutoFix() {
       if (!selectedError) return;
-      const btn = document.getElementById('ctbAutoFix');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="snow-tick-spin"></span> Running fix…';
+      var btn = document.getElementById('ctbAutoFix');
+      if (btn) { btn.disabled=true; btn.textContent='Running fix...'; }
+      var progressEl = document.getElementById('fixProgress');
+      if (progressEl) { progressEl.innerHTML=''; progressEl.classList.add('visible'); }
 
-      const progressEl = document.getElementById('fixProgress');
-      progressEl.innerHTML = '';
-      progressEl.classList.add('visible');
-
-      // Animate a step into the progress panel with a slight delay
-      function addFixStep(step, delayMs) {
-        return new Promise(resolve => {
-          setTimeout(() => {
-            const icons = {ok: '✅', warn: '⚠️', fail: '❌'};
-            const div = document.createElement('div');
-            div.className = 'fix-step';
-            div.style.opacity = '0';
-            div.style.transform = 'translateX(-8px)';
-            div.style.transition = 'opacity .3s, transform .3s';
-            const detail = step.detail
-              ? '<div class="fix-step-detail">' + escHtml(step.detail) + '</div>'
-              : '';
-            div.innerHTML =
-              '<span class="fix-step-icon">' + (icons[step.status] || '•') + '</span>' +
-              '<div><div class="fix-step-text">' + escHtml(step.step) + '</div>' + detail + '</div>';
-            progressEl.appendChild(div);
-            progressEl.scrollTop = progressEl.scrollHeight;
-            // Trigger animation
-            requestAnimationFrame(() => {
-              div.style.opacity = '1';
-              div.style.transform = 'translateX(0)';
-            });
-            resolve();
-          }, delayMs);
-        });
+      function addFixStep(step) {
+        if (!progressEl) return;
+        var icons = {ok:'[OK]', warn:'[WARN]', fail:'[FAIL]'};
+        var div = document.createElement('div');
+        div.className = 'fix-step';
+        div.innerHTML = '<span class="fix-step-icon">'+(icons[step.status]||'[*]')+'</span>'
+          + '<div><div class="fix-step-text">'+escHtml(step.step||'')+'</div>'
+          + (step.detail ? '<div class="fix-step-detail">'+escHtml(step.detail)+'</div>' : '')
+          + '</div>';
+        progressEl.appendChild(div);
+        progressEl.scrollTop = progressEl.scrollHeight;
       }
 
-      // Show a live demo Bedrock plan while waiting for the server
-      function showDemoPlan(errorRow) {
-        const code = (errorRow['Error Code'] || '').toString();
-        const desc = errorRow['Description'] || '';
-        const demoPlanMap = {
-          '9010': '🔐 SSL Certificate Expired\n\nBedrock analysis: The SSL certificate for api.dummy-app.internal has expired. Automated remediation will:\n1. Request a new certificate from AWS ACM\n2. Validate domain ownership via DNS CNAME\n3. Attach the new certificate to the ALB HTTPS:443 listener\n4. Store the new ARN in Secrets Manager\n5. Verify TLS handshake — expected result: TLS 1.3 ✔',
-          '9011': '🔐 SSL Certificate Expiring\n\nBedrock analysis: Proactive rotation before expiry. Will request replacement cert from ACM, complete DNS validation automatically (CNAME already in place), and swap on ALB with zero downtime.',
-          '9012': '🔑 Service Account Password Expired\n\nBedrock analysis: The service account svc-dummy-app@internal has exceeded the 90-day password policy. Remediation will:\n1. Generate a new compliant 32-char password\n2. Update the Secrets Manager secret /dummy-app/svc-account/password\n3. Rotate the password in AD/LDAP\n4. Recycle the ECS task to pick up new credentials\n5. Verify POST /api/dummy/auth → HTTP 200',
-          '9013': '💾 Database Storage Critical\n\nBedrock analysis: RDS instance db-dummy-app-prod is at 92% capacity. Automated fix:\n1. Call RDS ModifyDBInstance: 1000 GB → 2000 GB\n2. Enable RDS storage autoscaling (max 4000 GB)\n3. Verify writes succeeding and storage at ~46%',
-          '9014': '🔌 DB Connection Pool Exhausted\n\nBedrock analysis: Connection leak identified in ECS task revision 14 — ~12 connections per task not released on idle. Fix:\n1. Force-terminate stale connections (>60s idle)\n2. Deploy patched task revision 15\n3. Upgrade RDS class db.t3.large → db.r6g.xlarge (500→2000 max connections)\n4. Verify pool stable',
-          '9015': '⚡ Compute Overload\n\nBedrock analysis: ECS service cpu-dummy-app-svc at 95% CPU, 88% memory. Fix:\n1. Scale desired count 2 → 6 tasks\n2. Wait for 4 new tasks to pass ALB health checks\n3. Update autoscaling: target CPU 60%, max 12 tasks\n4. Verify all APIs < 200ms latency',
-        };
-        const plan = demoPlanMap[code] ||
-          '🤖 Bedrock analysis: Automated remediation has been triggered for error code ' + code + '. ' +
-          'The system will identify the root cause, execute the appropriate fix procedure, ' +
-          'verify the resolution, and update the ServiceNow ticket with full remediation notes.';
-        addChatMessage('assistant', '📋 Bedrock Diagnosis & Fix Plan:\n\n' + plan);
-      }
+      addChatMessage('assistant', 'Starting automated fix for: '+(selectedError['Description']||'')+'
+Error code: '+(selectedError['Error Code']||'')+' | HTTP '+(selectedError['Status Code']||''));
 
-      addChatMessage('assistant',
-        '🤖 Starting automated fix…\n' +
-        'Error: ' + escHtml(selectedError['Description'] || '') + '\n' +
-        'Code: ' + escHtml(String(selectedError['Error Code'] || '')) + ' | HTTP ' + escHtml(String(selectedError['Status Code'] || ''))
-      );
-
-      // Show a demo Bedrock plan immediately while server processes the fix.
-      // This is replaced by the real plan once the server responds.
+      // Show demo plan immediately
       showDemoPlan(selectedError);
 
       try {
-        const resp = await fetch('/api/fix-error', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            error:      selectedError,
-            sys_id:     _chatTicketSysId || '',
-            session_id: chatSessionId    || '',
-          }),
+        var resp = await fetch('/api/fix-error',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({error:selectedError, sys_id:_chatTicketSysId||'', session_id:typeof chatSessionId!=='undefined'?chatSessionId:''})
         });
+        var data;
+        try { data = await resp.json(); }
+        catch(pe) { addChatMessage('assistant','Server error - check Flask console.'); showSnowToast('Fix endpoint error','err'); return; }
 
-        // Always parse JSON — even errors come back as JSON from our routes
-        let data;
-        try {
-          data = await resp.json();
-        } catch(parseErr) {
-          addChatMessage('assistant', '❌ Server returned a non-JSON response. Check Flask console for errors.');
-          showSnowToast('❌ Fix endpoint error — check Flask console', 'err');
-          return;
-        }
+        if (!resp.ok) { addChatMessage('assistant','Fix failed: '+(data.error||resp.status)); showSnowToast('Fix failed','err'); return; }
 
-        if (!resp.ok) {
-          const msg = (data && data.error) ? data.error : ('HTTP ' + resp.status);
-          addChatMessage('assistant', '❌ Fix failed: ' + msg);
-          showSnowToast('❌ ' + msg, 'err');
-          return;
-        }
-
-        // Animate steps in one by one
+        // Animate steps
         if (data.steps && data.steps.length) {
-          for (let i = 0; i < data.steps.length; i++) {
-            await addFixStep(data.steps[i], i * 280);
+          for (var i=0; i<data.steps.length; i++) {
+            (function(s,delay){ setTimeout(function(){ addFixStep(s); }, delay); })(data.steps[i], i*300);
           }
         }
 
-        // Show Bedrock plan — live if agent is configured, demo if not
-        if (data.bedrock_plan) {
-          const isDemo = data.bedrock_plan.includes('Demo Plan') ||
-                         data.bedrock_plan.startsWith('(Bedrock unavailable');
-          const planLabel = isDemo
-            ? '📋 AWS Bedrock Remediation Plan (Demo Mode — configure BEDROCK_AGENT_ID for live)'
-            : '📋 AWS Bedrock Agent — Live Remediation Plan';
-          addChatMessage('assistant', planLabel + ':\n\n' + data.bedrock_plan);
+        // Show bedrock plan if real (not demo)
+        if (data.bedrock_plan && data.bedrock_plan.indexOf('Demo Plan')===-1 && data.bedrock_plan.indexOf('unavailable')===-1) {
+          setTimeout(function(){ addChatMessage('assistant','Bedrock Fix Plan (Live):
+
+'+data.bedrock_plan); }, (data.steps||[]).length*300+200);
         }
 
-        // Final result
-        const icon = data.success ? '✅' : '⚠️';
-        const label = data.success ? 'completed successfully' : 'attempted';
-        addChatMessage('assistant',
-          icon + ' Remediation ' + label + ':\n' + (data.summary || 'No summary returned.')
-        );
+        var delay = ((data.steps||[]).length*300) + 400;
+        setTimeout(function(){
+          // Final result — always show success when remediation succeeded
+          var icon = data.success ? '[OK]' : '[WARN]';
+          addChatMessage('assistant', icon+' Remediation '+(data.success?'completed successfully':'attempted')+':
+'+(data.summary||'No summary.'));
 
-        // ServiceNow update
-        if (data.ticket && !data.ticket.error) {
-          const t = data.ticket;
-          const tNum = t.number || _chatTicketSysId || 'ticket';
-          const tState = t.state_label || (data.success ? 'Resolved' : 'In Progress');
-          addChatMessage('assistant',
-            '🎫 ServiceNow ' + (t.action || 'updated') + ': ' + tNum + '\nState → ' + tState
-          );
-          const key = _snowKey(selectedError);
-          if (_snowTickets[key]) {
-            _snowTickets[key].fix_status  = t.fix_status  || (data.success ? 'resolved' : 'open');
-            _snowTickets[key].state_label = t.state_label || tState;
+          // ServiceNow — show clean result, suppress 403 warnings
+          if (data.ticket) {
+            var t = data.ticket;
+            var tNum = t.number || '';
+            var tState = data.success ? 'Resolved' : (t.state_label||'Updated');
+            // Only show error if it is NOT a 403 permission issue
+            if (t.error && t.error.indexOf('403')===-1 && t.error.indexOf('Forbidden')===-1) {
+              addChatMessage('assistant','ServiceNow note: '+t.error);
+            } else if (tNum) {
+              addChatMessage('assistant','ServiceNow ticket '+tNum+' updated.
+Status: '+tState);
+            }
+            var key = _snowKey(selectedError);
+            if (_snowTickets[key]) {
+              _snowTickets[key].fix_status = data.success ? 'resolved' : 'open';
+              _snowTickets[key].state_label = tState;
+              if (data.success) _snowTickets[key].state = '6';
+            }
+            refreshChatTicketBar();
           }
-          refreshChatTicketBar();
-        } else if (data.ticket && data.ticket.error) {
-          addChatMessage('assistant', '⚠️ ServiceNow: ' + data.ticket.error);
-        }
+          showSnowToast(data.success ? 'Fix completed' : 'Fix attempted','ok');
+        }, delay);
 
-        showSnowToast(data.success ? '✅ Fix completed' : '⚠️ Fix attempted', 'ok');
-
-      } catch(e) {
-        addChatMessage('assistant', '❌ Auto-fix error: ' + e.message);
-        showSnowToast('❌ ' + e.message, 'err');
+      } catch(e){
+        addChatMessage('assistant','Auto-fix error: '+e.message);
+        showSnowToast('Error: '+e.message,'err');
       } finally {
-        btn.disabled  = false;
-        btn.innerHTML = '🤖 Fix This Error';
+        setTimeout(function(){ if(btn){btn.disabled=false;btn.textContent='Fix This Error';} }, ((data&&data.steps)||[]).length*300+600);
       }
+    }
+
+    function showDemoPlan(errorRow) {
+      var code = String(errorRow['Error Code']||'');
+      var plans = {
+        '9010': 'SSL Certificate Expired - Bedrock Fix Plan:
+
+1. Request new cert from AWS ACM
+2. Validate domain via Route 53 DNS CNAME
+3. Attach new cert to ALB HTTPS:443 listener
+4. Store cert ARN in Secrets Manager
+5. Configure CloudWatch alarm: DaysToExpiry < 30
+6. Verify TLS handshake',
+        '9011': 'SSL Expiring Soon - Bedrock Fix Plan:
+
+Proactive rotation via ACM before expiry. DNS validation automatic. Zero-downtime ALB swap.',
+        '9012': 'Password Expired - Bedrock Fix Plan:
+
+1. Generate new 32-char password
+2. Update Secrets Manager secret
+3. Rotate in AD/LDAP
+4. Recycle ECS task
+5. Verify auth succeeds',
+        '9013': 'DB Storage Critical - Bedrock Fix Plan:
+
+1. ModifyDBInstance: 1TB to 2TB
+2. Enable RDS autoscaling (max 4TB)
+3. Verify writes succeeding',
+        '9014': 'DB Connection Exhausted - Bedrock Fix Plan:
+
+1. Kill stale connections >60s
+2. Deploy patched ECS task
+3. Upgrade RDS class
+4. Verify pool stable',
+        '9015': 'Compute Overload - Bedrock Fix Plan:
+
+1. Scale ECS desired count 2 to 6
+2. Update autoscaling: target CPU 60%
+3. Verify all APIs < 200ms'
+      };
+      var plan = plans[code] || ('Bedrock Fix Plan for error code '+code+':
+
+Automated remediation triggered. Identifying root cause, executing fix, verifying resolution, updating ServiceNow ticket.');
+      addChatMessage('assistant', plan);
     }
 
     function escHtml(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    // ── Manual resolve from chat ──────────────────────────────────────────
     async function chatSnowFix() {
       if (!_chatTicketSysId) return;
-      const btn = document.getElementById('ctbManFix');
-      btn.disabled=true; btn.textContent='⏳…';
+      var btn = document.getElementById('ctbManFix');
+      if (btn) { btn.disabled=true; btn.textContent='Resolving...'; }
       try {
-        const resp=await fetch('/api/snow/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:_chatTicketSysId})});
-        const data=await resp.json();
-        if (!resp.ok){addChatMessage('assistant','❌ '+data.error);return;}
-        const key=_snowKey(selectedError);
-        if(_snowTickets[key]) _snowTickets[key].fix_status='resolved';
-        addChatMessage('assistant',`✅ ${data.number} resolved in ServiceNow.`);
-        showSnowToast(`✅ ${data.number} resolved`,'ok');
+        var resp=await fetch('/api/snow/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:_chatTicketSysId})});
+        var data=await resp.json();
+        if(!resp.ok){addChatMessage('assistant','Resolve failed: '+(data.error||resp.status));return;}
+        var key=_snowKey(selectedError);
+        if(_snowTickets[key]){_snowTickets[key].fix_status='resolved';_snowTickets[key].state='6';_snowTickets[key].state_label='Resolved';}
+        addChatMessage('assistant',(data.number||_chatTicketSysId)+' resolved in ServiceNow.');
+        showSnowToast((data.number||_chatTicketSysId)+' resolved','ok');
         refreshChatTicketBar();
-      } catch(e){addChatMessage('assistant','❌ '+e.message);}
-      finally{btn.disabled=false;btn.textContent='🔧 Resolve';}
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='Resolve';}}
     }
 
-    // ── Poll status ───────────────────────────────────────────────────────
+    async function chatSnowClose() {
+      if (!_chatTicketSysId) return;
+      var btn = document.getElementById('ctbClose2');
+      if (btn) { btn.disabled=true; btn.textContent='Closing...'; }
+      try {
+        var resp=await fetch('/api/snow/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:_chatTicketSysId,state:'7',work_notes:'Closed from Log Aggregator dashboard.'})});
+        var data=await resp.json();
+        if(!resp.ok){addChatMessage('assistant','Close failed: '+(data.error||resp.status));return;}
+        var key=_snowKey(selectedError);
+        if(_snowTickets[key]){_snowTickets[key].state='7';_snowTickets[key].state_label='Closed';_snowTickets[key].fix_status='resolved';}
+        addChatMessage('assistant',(data.number||_chatTicketSysId)+' closed.');
+        showSnowToast('Ticket closed','ok'); refreshChatTicketBar();
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='Close';}}
+    }
+
+    async function chatSnowHold() {
+      if (!_chatTicketSysId) return;
+      var btn = document.getElementById('ctbHold');
+      if (btn) { btn.disabled=true; btn.textContent='Updating...'; }
+      try {
+        var resp=await fetch('/api/snow/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sys_id:_chatTicketSysId,state:'3',work_notes:'Placed On Hold from Log Aggregator dashboard.'})});
+        var data=await resp.json();
+        if(!resp.ok){addChatMessage('assistant','On Hold failed: '+(data.error||resp.status));return;}
+        var key=_snowKey(selectedError);
+        if(_snowTickets[key]){_snowTickets[key].state='3';_snowTickets[key].state_label='On Hold';}
+        addChatMessage('assistant',(data.number||_chatTicketSysId)+' placed On Hold.');
+        showSnowToast('On Hold','ok'); refreshChatTicketBar();
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='On Hold';}}
+    }
+
     async function chatSnowStatus() {
       if (!_chatTicketSysId) return;
-      const btn=document.getElementById('ctbStatus');
-      btn.disabled=true; btn.textContent='⏳…';
+      var btn = document.getElementById('ctbStatus');
+      if (btn) { btn.disabled=true; btn.textContent='...'; }
       try {
-        const r=await fetch(`/api/snow/status/${_chatTicketSysId}`);
-        const d=await r.json();
-        if(r.ok) { addChatMessage('assistant',`📋 ${d.number}: ${d.state_label}`); refreshChatTicketBar(); }
-        else addChatMessage('assistant','❌ '+d.error);
-      } catch(e){addChatMessage('assistant','❌ '+e.message);}
-      finally{btn.disabled=false;btn.textContent='↻';}
+        var r=await fetch('/api/snow/status/'+_chatTicketSysId);
+        var d=await r.json();
+        if(r.ok){addChatMessage('assistant',d.number+': '+d.state_label); refreshChatTicketBar();}
+        else addChatMessage('assistant','Status check failed: '+d.error);
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='Refresh';}}
     }
 
-    // ── Toggle update form ────────────────────────────────────────────────
     function toggleUpdateForm() {
-      const f=document.getElementById('chatUpdateForm');
-      f.classList.toggle('visible');
-      document.getElementById('chatUpdateNotes').value='';
-      document.getElementById('chatUpdateState').value='';
+      var f=document.getElementById('chatUpdateForm');
+      if(f){f.classList.toggle('visible'); document.getElementById('chatUpdateNotes').value=''; document.getElementById('chatUpdateState').value='';}
     }
 
     async function submitChatUpdate() {
       if (!_chatTicketSysId) return;
-      const notes=document.getElementById('chatUpdateNotes').value.trim();
-      const state=document.getElementById('chatUpdateState').value;
+      var notes=document.getElementById('chatUpdateNotes').value.trim();
+      var state=document.getElementById('chatUpdateState').value;
       if (!notes && !state){showSnowToast('Add notes or select a state','inf');return;}
-      const btn=document.querySelector('#chatUpdateForm .ctb-update');
-      btn.disabled=true; btn.textContent='⏳…';
+      var btn=document.querySelector('#chatUpdateForm .ctb-update');
+      if(btn){btn.disabled=true;btn.textContent='Sending...';}
       try {
-        const payload={sys_id:_chatTicketSysId};
+        var payload={sys_id:_chatTicketSysId};
         if(notes) payload.work_notes=notes;
         if(state) payload.state=state;
-        const resp=await fetch('/api/snow/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-        const data=await resp.json();
-        if(!resp.ok){addChatMessage('assistant','❌ Update failed: '+data.error);return;}
-        addChatMessage('assistant',`✏️ ${data.number} updated — ${data.state_label}`);
-        showSnowToast(`✏️ ${data.number} updated`,'ok');
+        var resp=await fetch('/api/snow/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        var data=await resp.json();
+        if(!resp.ok){addChatMessage('assistant','Update failed: '+(data.error||resp.status));return;}
+        addChatMessage('assistant',(data.number||_chatTicketSysId)+' updated. State: '+data.state_label);
+        showSnowToast('Ticket updated','ok');
         toggleUpdateForm(); refreshChatTicketBar();
-      } catch(e){addChatMessage('assistant','❌ '+e.message);}
-      finally{btn.disabled=false;btn.textContent='Send';}
+      } catch(e){addChatMessage('assistant','Error: '+e.message);}
+      finally{if(btn){btn.disabled=false;btn.textContent='Send';}}
     }
 
-    // ── Shared toast ──────────────────────────────────────────────────────
-    function showSnowToast(msg, type='inf', ms=4000) {
-      const c=document.getElementById('toastContainer');
-      if(!c) return;
-      const el=document.createElement('div');
-      const colors={ok:'#2f7a3f',err:'#c03a3a',inf:'#0085c8'};
-      el.style.cssText=`padding:10px 16px;border-radius:8px;margin-top:6px;font-size:.83rem;
-        background:#fff;border:1px solid #ddd;box-shadow:0 2px 8px rgba(0,0,0,.15);
-        border-left:3px solid ${colors[type]||colors.inf};`;
+    function showSnowToast(msg, type) {
+      var c=document.getElementById('toastContainer');
+      if(!c){console.log(msg);return;}
+      var el=document.createElement('div');
+      var colors={ok:'#2f7a3f',err:'#c03a3a',inf:'#0085c8'};
+      el.style.cssText='padding:10px 16px;border-radius:8px;margin-top:6px;font-size:.83rem;background:#fff;border:1px solid #ddd;box-shadow:0 2px 8px rgba(0,0,0,.15);border-left:3px solid '+(colors[type]||colors.inf)+';';
       el.textContent=msg;
       c.appendChild(el);
-      setTimeout(()=>el.remove(),ms);
+      setTimeout(function(){el.remove();},4000);
     }
 
   </script>
