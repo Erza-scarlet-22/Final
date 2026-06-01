@@ -116,9 +116,14 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
 
             payload['summary']['uniqueErrorTypes'] = len(filtered_rows)
             payload['summary']['totalErrorEvents'] = total_events
-            payload['byStatus']    = by_status
-            payload['byApi']       = by_api
+            payload['byStatus']     = by_status
+            payload['byApi']        = by_api
             payload['sourceFilter'] = source_filter
+            # Preserve filter metadata including retention info for the banner
+            # (source filtering must not strip retentionDays / cutoffDate)
+            if 'filter' not in payload:
+                payload['filter'] = {}
+            payload['filter']['sourceFilter'] = source_filter
 
         return jsonify(payload), 200
 
@@ -133,34 +138,114 @@ def create_dashboard_blueprint(conversion_dir: str, run_conversion_outputs):
 
     @dashboard_bp.route('/api/chat-insights', methods=['POST'])
     def chat_insights():
+        """
+        Story 4977 — AI Insights Experience.
+
+        AC1: Entry point from selected error record.
+        AC2: Returns threaded reply with session ID for continuity.
+        AC3: Clear error messages for all failure modes.
+        AC4: sessionId preserved across follow-up questions.
+
+        Request:
+            {
+              "error":     { ...error row from dashboard... },
+              "message":   "What is the root cause?",
+              "history":   [{"role":"user","content":"..."}, ...],
+              "sessionId": "uuid-or-empty"
+            }
+
+        Response:
+            {
+              "reply":     "AI response text",
+              "sessionId": "uuid — pass back on next request",
+              "provider":  "aws-bedrock-agent",
+              "modelId":   "agent:ID/ALIAS"
+            }
+        """
+        # AC3: Validate payload
+        if not request.is_json:
+            return jsonify({
+                'error': 'Request must be JSON (Content-Type: application/json)'
+            }), 400
+
         payload       = request.get_json(silent=True) or {}
         error_context = payload.get('error') or {}
         user_message  = (payload.get('message') or '').strip()
         history       = payload.get('history') or []
         session_id    = (payload.get('sessionId') or '').strip()
 
+        # AC3: Input validation with clear messages
         if not isinstance(error_context, dict):
-            return jsonify({'error': 'Invalid payload: error context must be an object'}), 400
+            return jsonify({'error': 'Invalid payload: "error" must be an object'}), 400
         if not isinstance(history, list):
-            return jsonify({'error': 'Invalid payload: history must be a list'}), 400
+            return jsonify({'error': 'Invalid payload: "history" must be a list'}), 400
+        if len(user_message) > 500:
+            return jsonify({'error': 'Message too long. Maximum 500 characters.'}), 400
         if not user_message:
-            user_message = 'Provide insights and remediation steps for this selected error.'
+            user_message = 'Provide root cause analysis, immediate checks, and remediation steps for this error.'
+
+        # AC3: Service unavailable state
         if not BEDROCK_CHAT_AVAILABLE:
-            return jsonify({'error': 'AWS Bedrock not available. Set BEDROCK_AGENT_ID and BEDROCK_AGENT_ALIAS_ID.'}), 503
+            return jsonify({
+                'error': (
+                    'AI service not configured. '
+                    'Set BEDROCK_AGENT_ID and BEDROCK_AGENT_ALIAS_ID in your .env file '
+                    'or AWS environment variables.'
+                )
+            }), 503
 
         try:
-            reply_text, metadata = generate_error_insight(error_context, user_message, history, session_id)
+            reply_text, metadata = generate_error_insight(
+                error_context, user_message, history, session_id
+            )
             return jsonify({
                 'reply':     reply_text,
                 'provider':  'aws-bedrock-agent',
                 'modelId':   metadata.get('model_id', ''),
                 'region':    metadata.get('region', ''),
-                'sessionId': metadata.get('session_id', session_id),
+                'sessionId': metadata.get('session_id', session_id),  # AC4
             }), 200
+
+        except RuntimeError as exc:
+            # Known errors from bedrock_chat_service (config, timeout, etc.)
+            msg = str(exc)
+            status = 503 if 'not configured' in msg.lower() else 502
+            return jsonify({'error': msg}), status
+
         except Exception as exc:
-            return jsonify({'error': str(exc)}), 500
+            return jsonify({'error': f'Unexpected error: {str(exc)}'}), 500
 
     # ── ServiceNow routes ──────────────────────────────────────────────────────
+
+    # ── Retention info endpoint (Story 4968/4970) ─────────────────────────────
+    @dashboard_bp.route('/api/retention-info', methods=['GET'])
+    def retention_info():
+        """
+        Returns current log retention configuration.
+        Used by the dashboard banner and can be used in demo presentations.
+
+        Response:
+            {
+              "retentionDays": 90,
+              "cutoffDate":    "2026-02-10",
+              "description":   "Data older than 2026-02-10 is automatically purged",
+              "configuredBy":  "LOG_RETENTION_DAYS environment variable"
+            }
+        """
+        import os as _os
+        from datetime import date as _date, timedelta as _td
+
+        days   = int(_os.environ.get('LOG_RETENTION_DAYS', '90'))
+        cutoff = (_date.today() - _td(days=days)).isoformat() if days > 0 else None
+        return jsonify({
+            'retentionDays': days,
+            'cutoffDate':    cutoff,
+            'description':   (
+                f'Data older than {cutoff} is automatically purged'
+                if cutoff else 'No retention limit configured'
+            ),
+            'configuredBy': 'LOG_RETENTION_DAYS environment variable',
+        }), 200
 
     @dashboard_bp.route('/api/snow/create', methods=['POST'])
     def snow_create():
